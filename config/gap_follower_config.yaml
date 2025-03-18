@@ -1,0 +1,13 @@
+gap_steering_node:
+  ros__parameters:
+    scan_topic: "/scan"
+    drive_topic: "/drive"
+    filtered_scan_topic: "/filtered_scan"
+    limit_angle: 70.0
+    kp: 1.1
+    obstacle_distance_thresh: 0.8
+    close_rays_thresh: 170
+    far_rays_thresh: 50
+    min_ray_distance: 5.0
+    max_ray_distance: 9.0
+    close_edges_thresh: 0.15
