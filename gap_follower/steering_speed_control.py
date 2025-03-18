@@ -28,6 +28,7 @@ class SteeringSpeedNode(Node):
         self.d_1 = None
         self.d_2 = None
         self.close_rays_thresh = 170
+        self.max_distance = 5.0
         listener = keyboard.Listener(
             on_press=self.on_press,
             on_release=self.on_release
@@ -171,6 +172,63 @@ class SteeringSpeedNode(Node):
                 theta = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
         return theta
 
+    def get_theta_target_4(self, poss_edges:list):
+        if len(poss_edges) == 0:
+            return 0.0
+        # find the most dangerous edge
+        self.filtered_scan_msg = copy.deepcopy(self.scan_msg)
+        tolerance = 0.15
+
+        dangerous_edge = poss_edges[0]
+        smallest_dist = poss_edges[0][1]
+        for curr_edge in poss_edges:
+            # the tolerance is to make the readings more stable "reduces wobbling"
+            if (smallest_dist > curr_edge[1]) and abs(smallest_dist - curr_edge[1]) > tolerance:
+                dangerous_edge = curr_edge             
+                smallest_dist = curr_edge[1]
+        
+        dangerous_edge_2nd = poss_edges[0]        
+        smallest_dist = poss_edges[0][1]
+        for curr_edge in poss_edges:
+            # the tolerance is to make the readings more stable "reduces wobbling"
+            if (smallest_dist > curr_edge[1]) and abs(smallest_dist - curr_edge[1]) > tolerance:
+                dangerous_edge_2nd = curr_edge             
+                smallest_dist = curr_edge[1]
+            if dangerous_edge_2nd == dangerous_edge:
+                dangerous_edge_2nd = curr_edge
+                
+        self.d_1 = dangerous_edge
+        self.d_2 = dangerous_edge_2nd
+
+        # check if the edge is very far away
+        if dangerous_edge[1] > self.max_distance and dangerous_edge_2nd[1] > self.max_distance:
+            avg_dist_x = (dangerous_edge[1] + dangerous_edge_2nd[1])/2
+            m = (170 - 50)/(self.max_distance - 13)
+            c = 170 - m*self.max_distance
+            self.close_rays_thresh = int(m*avg_dist_x + c)
+        else:
+            self.close_rays_thresh = 170
+
+        for i in range(-self.close_rays_thresh//2, self.close_rays_thresh//2):
+            var_index = (i + dangerous_edge[0])
+            var_index_2nd = (i + dangerous_edge_2nd[0])
+            if 0 <= var_index < len(self.filtered_scan_msg.ranges):
+                # filter the readings
+                self.filtered_scan_msg.ranges[var_index] = dangerous_edge[1]
+            if 0 <= var_index_2nd < len(self.filtered_scan_msg.ranges):
+                self.filtered_scan_msg.ranges[var_index_2nd] = dangerous_edge_2nd[1]
+        
+        # publish filtered scan data
+        self.filtered_laser_scan_pub.publish(self.filtered_scan_msg)
+
+        # get the longest ray
+        the_longest_ray = -1.0
+        for i in range(self.smaller_angle_index, self.bigger_angle_index):
+            if self.filtered_scan_msg.ranges[i] > the_longest_ray:
+                the_longest_ray = self.filtered_scan_msg.ranges[i]
+                theta = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
+        return theta
+
     def filter_scan_cb(self, msg:LaserScan):
         self.scan_msg = msg
         smaller_angle = math.radians(-self.limit_angle)
@@ -178,7 +236,7 @@ class SteeringSpeedNode(Node):
         bigger_angle = math.radians(self.limit_angle)
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
         self.possible_edges = self.find_possible_edges()
-        self.theta = self.get_theta_target_3(poss_edges=self.possible_edges)
+        self.theta = self.get_theta_target_4(poss_edges=self.possible_edges)
 
     def follow_the_gap(self):
         ref_angle = 0.0
@@ -189,12 +247,13 @@ class SteeringSpeedNode(Node):
         steering_angle = math.radians(steering_angle)
         self.vel_cmd.drive.steering_angle = steering_angle
         self.pub_vel_cmd.publish(self.vel_cmd)
-        string = ""
-        for tub in self.possible_edges:
-            string += str(f"{tub[0]}  {tub[2]} | ")
+        # string = ""
+        # for tub in self.possible_edges:
+        #     string += str(f"{tub[0]}  {tub[2]} | ")
+        # if self.d_1 and self.d_2:
+        #     print(f"theta: {self.theta} deg  {string} || {self.d_1[0]}  {self.d_2[0]}")
         if self.d_1 and self.d_2:
-            print(f"theta: {self.theta} deg  {string} || {self.d_1[0]}  {self.d_2[0]}")
-        # self.get_logger().info(f"theta: {self.theta} deg")
+            print(f"theta: {self.theta} deg || {self.d_1[1]}  {self.d_2[1]}" )
 
 def main():
     rclpy.init()
