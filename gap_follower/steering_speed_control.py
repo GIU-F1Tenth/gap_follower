@@ -58,7 +58,7 @@ class SteeringSpeedNode(Node):
             if key.char == 'w':
                 self.vel_cmd.drive.speed = 1.8
             if key.char == 'b':
-                self.vel_cmd.drive.speed = 4.0
+                self.vel_cmd.drive.speed = 6.0
         except AttributeError:
             self.get_logger().warn("error while sending.. :(")
 
@@ -211,11 +211,16 @@ class SteeringSpeedNode(Node):
         self.d_2 = dangerous_edge_2nd
 
         # check if the edge is very far away
-        if dangerous_edge[1] > self.min_distance and dangerous_edge_2nd[1] > self.min_distance:
-            avg_dist_x = (dangerous_edge[1] + dangerous_edge_2nd[1])/2
+        if self.d_1[1] > self.min_distance and self.d_2[1] > self.min_distance:
+            avg_dist_x = min(self.d_1[1], self.d_2[1])
             m = (self.close_rays_thresh - self.far_rays_thresh)/(self.min_distance - self.max_distance)
             c = self.close_rays_thresh - m*self.min_distance
             self.close_rays_thresh = int(m*avg_dist_x + c)
+            # cap the rays_thresh
+            if self.close_edges_thresh > self.close_edges_thresh_param.get_parameter_value().integer_value:
+                self.rays_radius = self.close_edges_thresh_param.get_parameter_value().integer_value
+            if self.rays_radius < self.far_rays_thresh:
+                self.rays_radius = self.far_rays_thresh
         else:
             self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
 
@@ -238,6 +243,77 @@ class SteeringSpeedNode(Node):
                 the_longest_ray = self.filtered_scan_msg.ranges[i]
                 theta = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
         return theta
+    
+    def find_critical_two_edges(self, poss_edges:list):
+        # find the most dangerous edges
+        self.filtered_scan_msg = copy.deepcopy(self.scan_msg)
+        dangerous_edge = poss_edges[0]
+        smallest_dist = poss_edges[0][1]
+        for curr_edge in poss_edges:
+            # the close_edges_thresh is to make the readings more stable "reduces wobbling"
+            if (smallest_dist > curr_edge[1]) and abs(smallest_dist - curr_edge[1]) > self.close_edges_thresh:
+                dangerous_edge = curr_edge             
+                smallest_dist = curr_edge[1]
+        
+        dangerous_edge_2nd = poss_edges[0]        
+        smallest_dist = poss_edges[0][1]
+        for curr_edge in poss_edges:
+            # the close_edges_thresh is to make the readings more stable "reduces wobbling"
+            if (smallest_dist > curr_edge[1]) and abs(smallest_dist - curr_edge[1]) > self.close_edges_thresh:
+                dangerous_edge_2nd = curr_edge             
+                smallest_dist = curr_edge[1]
+            if dangerous_edge_2nd == dangerous_edge:
+                dangerous_edge_2nd = curr_edge
+                
+        self.d_1 = dangerous_edge
+        self.d_2 = dangerous_edge_2nd
+
+    def filter_scan(self):
+        # check if the edge is very far away
+        if self.d_1[1] > self.min_distance and self.d_2[1] > self.min_distance:
+            avg_dist_x = min(self.d_1[1], self.d_2[1])
+            m = (self.close_rays_thresh - self.far_rays_thresh)/(self.min_distance - self.max_distance)
+            c = self.close_rays_thresh - m*self.min_distance
+            self.close_rays_thresh = int(m*avg_dist_x + c)
+            # cap the rays_thresh
+            if self.close_edges_thresh > self.close_edges_thresh_param.get_parameter_value().integer_value:
+                self.rays_radius = self.close_edges_thresh_param.get_parameter_value().integer_value
+            if self.rays_radius < self.far_rays_thresh:
+                self.rays_radius = self.far_rays_thresh
+        else:
+            self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
+
+        for i in range(-self.close_rays_thresh//2, self.close_rays_thresh//2):
+            var_index = (i + self.d_1[0])
+            var_index_2nd = (i + self.d_2[0])
+            if 0 <= var_index < len(self.filtered_scan_msg.ranges):
+                # filter the readings
+                self.filtered_scan_msg.ranges[var_index] = self.d_1[1]
+            if 0 <= var_index_2nd < len(self.filtered_scan_msg.ranges):
+                self.filtered_scan_msg.ranges[var_index_2nd] = self.d_2[1]
+
+    def find_theta_from_longest_ray(self):
+        # get the longest ray
+        the_longest_ray = -1.0
+        for i in range(self.smaller_angle_index, self.bigger_angle_index):
+            if self.filtered_scan_msg.ranges[i] > the_longest_ray:
+                the_longest_ray = self.filtered_scan_msg.ranges[i]
+                theta = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
+        return theta
+
+    def get_theta_target_5(self, poss_edges:list):
+        if len(poss_edges) == 0:
+            return 0.0
+
+        self.find_critical_two_edges(poss_edges)
+
+        self.filter_scan()
+
+        # publish filtered scan data
+        self.filtered_laser_scan_pub.publish(self.filtered_scan_msg)
+
+        return self.find_theta_from_longest_ray()
+ 
 
     def filter_scan_cb(self, msg:LaserScan):
         self.scan_msg = msg
@@ -246,7 +322,7 @@ class SteeringSpeedNode(Node):
         bigger_angle = math.radians(self.limit_angle)
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
         self.possible_edges = self.find_possible_edges()
-        self.theta = self.get_theta_target_4(poss_edges=self.possible_edges)
+        self.theta = self.get_theta_target_5(poss_edges=self.possible_edges)
 
     def follow_the_gap(self):
         ref_angle = 0.0
@@ -262,7 +338,7 @@ class SteeringSpeedNode(Node):
         # if self.d_1 and self.d_2:
         #     self.get_logger().info(f"theta: {self.theta} deg  {string} || {self.d_1[0]}  {self.d_2[0]}")
         if self.d_1 and self.d_2:
-            self.get_logger().info(f"theta:{self.theta:.3f} deg |{self.kp}| {self.d_1[1]:.3f} --- {self.d_1[2]:.3f}   {self.d_2[1]:.3f} --- {self.d_2[2]:.3f}" )
+            self.get_logger().info(f"theta:{self.theta:.2f} || {self.d_1[1]:.2f} * {self.d_1[2]:.2f}   {self.d_2[1]:.2f} -- {self.d_2[2]:.2f} || edges: {len(self.possible_edges)} || arc: {self.close_rays_thresh}" )
 
 def main():
     rclpy.init()
