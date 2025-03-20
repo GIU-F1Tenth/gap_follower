@@ -69,14 +69,15 @@ class SteeringSpeedNode(Node):
         if key == keyboard.Key.esc:
             # Stop listener
             return False
-        
-    def find_possible_edges(self):
-        ranges = self.scan_msg.ranges
+    
+    def find_possible_edges(self, scan_msg: LaserScan):
+        ranges = scan_msg.ranges
         possible_edges = []
         for i in range(self.smaller_angle_index, self.bigger_angle_index-1):
             if abs(ranges[i] - ranges[i+1]) > self.obs_thresh: # we found an edge (index, distance, angle)
-                angle = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
+                angle = math.degrees(scan_msg.angle_min + scan_msg.angle_increment * i)
                 possible_edges.append((i, min(ranges[i], ranges[i+1]), angle))
+        
         return possible_edges
 
     def get_theta_target(self, poss_edges):
@@ -106,6 +107,7 @@ class SteeringSpeedNode(Node):
             if self.filtered_scan_msg.ranges[i] > the_longest_ray:
                 the_longest_ray = self.filtered_scan_msg.ranges[i]
                 theta = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
+        
         return theta
 
     def get_theta_target_2(self, poss_edges):
@@ -136,6 +138,7 @@ class SteeringSpeedNode(Node):
             if self.filtered_scan_msg.ranges[i] > the_longest_ray:
                 the_longest_ray = self.filtered_scan_msg.ranges[i]
                 theta = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
+        
         return theta
 
     def get_theta_target_3(self, poss_edges:list):
@@ -182,6 +185,7 @@ class SteeringSpeedNode(Node):
             if self.filtered_scan_msg.ranges[i] > the_longest_ray:
                 the_longest_ray = self.filtered_scan_msg.ranges[i]
                 theta = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
+        
         return theta
 
     def get_theta_target_4(self, poss_edges:list):
@@ -215,16 +219,16 @@ class SteeringSpeedNode(Node):
             avg_dist_x = min(self.d_1[1], self.d_2[1])
             m = (self.close_rays_thresh - self.far_rays_thresh)/(self.min_distance - self.max_distance)
             c = self.close_rays_thresh - m*self.min_distance
-            self.close_rays_thresh = int(m*avg_dist_x + c)
+            self.rays_radius = int(m*avg_dist_x + c)
             # cap the rays_thresh
-            if self.close_edges_thresh > self.close_edges_thresh_param.get_parameter_value().integer_value:
-                self.rays_radius = self.close_edges_thresh_param.get_parameter_value().integer_value
-            if self.rays_radius < self.far_rays_thresh:
-                self.rays_radius = self.far_rays_thresh
+            if self.rays_radius > self.close_rays_thresh_param.get_parameter_value().integer_value:
+                self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
+            if self.rays_radius < self.far_rays_thresh_param.get_parameter_value().integer_value:
+                self.rays_radius = self.far_rays_thresh_param.get_parameter_value().integer_value
         else:
-            self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
+            self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
 
-        for i in range(-self.close_rays_thresh//2, self.close_rays_thresh//2):
+        for i in range(-self.rays_radius//2, self.rays_radius//2):
             var_index = (i + dangerous_edge[0])
             var_index_2nd = (i + dangerous_edge_2nd[0])
             if 0 <= var_index < len(self.filtered_scan_msg.ranges):
@@ -242,11 +246,11 @@ class SteeringSpeedNode(Node):
             if self.filtered_scan_msg.ranges[i] > the_longest_ray:
                 the_longest_ray = self.filtered_scan_msg.ranges[i]
                 theta = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
+        
         return theta
     
     def find_critical_two_edges(self, poss_edges:list):
         # find the most dangerous edges
-        self.filtered_scan_msg = copy.deepcopy(self.scan_msg)
         dangerous_edge = poss_edges[0]
         smallest_dist = poss_edges[0][1]
         for curr_edge in poss_edges:
@@ -264,55 +268,65 @@ class SteeringSpeedNode(Node):
                 smallest_dist = curr_edge[1]
             if dangerous_edge_2nd == dangerous_edge:
                 dangerous_edge_2nd = curr_edge
-                
-        self.d_1 = dangerous_edge
-        self.d_2 = dangerous_edge_2nd
+        
+        return dangerous_edge, dangerous_edge_2nd
 
-    def filter_scan(self):
+    def filter_scan(self, d_1, d_2):
+        filtered_scan_msg = copy.deepcopy(self.scan_msg)
         # check if the edge is very far away
         if self.d_1[1] > self.min_distance and self.d_2[1] > self.min_distance:
             avg_dist_x = min(self.d_1[1], self.d_2[1])
             m = (self.close_rays_thresh - self.far_rays_thresh)/(self.min_distance - self.max_distance)
             c = self.close_rays_thresh - m*self.min_distance
-            self.close_rays_thresh = int(m*avg_dist_x + c)
+            self.rays_radius = int(m*avg_dist_x + c)
             # cap the rays_thresh
-            if self.close_edges_thresh > self.close_edges_thresh_param.get_parameter_value().integer_value:
-                self.rays_radius = self.close_edges_thresh_param.get_parameter_value().integer_value
-            if self.rays_radius < self.far_rays_thresh:
-                self.rays_radius = self.far_rays_thresh
+            if self.rays_radius > self.close_rays_thresh_param.get_parameter_value().integer_value:
+                self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
+            if self.rays_radius < self.far_rays_thresh_param.get_parameter_value().integer_value:
+                self.rays_radius = self.far_rays_thresh_param.get_parameter_value().integer_value
         else:
-            self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
+            self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
 
-        for i in range(-self.close_rays_thresh//2, self.close_rays_thresh//2):
-            var_index = (i + self.d_1[0])
-            var_index_2nd = (i + self.d_2[0])
-            if 0 <= var_index < len(self.filtered_scan_msg.ranges):
+        for i in range(-self.rays_radius//2, self.rays_radius//2):
+            var_index = (i + d_1[0])
+            var_index_2nd = (i + d_2[0])
+            if 0 <= var_index < len(filtered_scan_msg.ranges):
                 # filter the readings
-                self.filtered_scan_msg.ranges[var_index] = self.d_1[1]
-            if 0 <= var_index_2nd < len(self.filtered_scan_msg.ranges):
-                self.filtered_scan_msg.ranges[var_index_2nd] = self.d_2[1]
+                filtered_scan_msg.ranges[var_index] = d_1[1]
+            if 0 <= var_index_2nd < len(filtered_scan_msg.ranges):
+                filtered_scan_msg.ranges[var_index_2nd] = d_2[1]
 
-    def find_theta_from_longest_ray(self):
+        return filtered_scan_msg
+
+    def find_theta_from_longest_ray(self, filtered_scan_msg: LaserScan):
         # get the longest ray
         the_longest_ray = -1.0
         for i in range(self.smaller_angle_index, self.bigger_angle_index):
-            if self.filtered_scan_msg.ranges[i] > the_longest_ray:
-                the_longest_ray = self.filtered_scan_msg.ranges[i]
-                theta = math.degrees(self.scan_msg.angle_min + self.scan_msg.angle_increment * i)
+            if filtered_scan_msg.ranges[i] > the_longest_ray:
+                the_longest_ray = filtered_scan_msg.ranges[i]
+                theta = math.degrees(filtered_scan_msg.angle_min + filtered_scan_msg.angle_increment * i)
+        
         return theta
 
-    def get_theta_target_5(self, poss_edges:list):
-        if len(poss_edges) == 0:
-            return 0.0
+    def get_theta_target_5(self):
+        # find the possible edges
+        possible_edges = self.find_possible_edges(scan_msg=self.scan_msg)
+        if len(possible_edges) == 0:
+            return 0.0        
 
-        self.find_critical_two_edges(poss_edges)
+        d_1, d_2 = self.find_critical_two_edges(possible_edges)
 
-        self.filter_scan()
+        # to print the dangerous distances
+        self.d_1 = d_1
+        self.d_2 = d_2
+
+        # filter scan message
+        filtered_scan_msg = self.filter_scan(d_1=d_1, d_2=d_2)
 
         # publish filtered scan data
-        self.filtered_laser_scan_pub.publish(self.filtered_scan_msg)
+        self.filtered_laser_scan_pub.publish(filtered_scan_msg)
 
-        return self.find_theta_from_longest_ray()
+        return self.find_theta_from_longest_ray(filtered_scan_msg)
  
 
     def filter_scan_cb(self, msg:LaserScan):
@@ -321,8 +335,9 @@ class SteeringSpeedNode(Node):
         self.smaller_angle_index = int((smaller_angle - msg.angle_min)/msg.angle_increment)
         bigger_angle = math.radians(self.limit_angle)
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
-        self.possible_edges = self.find_possible_edges()
-        self.theta = self.get_theta_target_5(poss_edges=self.possible_edges)
+        self.possible_edges = self.find_possible_edges(scan_msg=self.scan_msg)
+        # self.theta = self.get_theta_target_4(poss_edges=self.possible_edges)
+        self.theta = self.get_theta_target_5()
 
     def follow_the_gap(self):
         ref_angle = 0.0
@@ -332,13 +347,8 @@ class SteeringSpeedNode(Node):
         steering_angle = math.radians(steering_angle)
         self.vel_cmd.drive.steering_angle = steering_angle
         self.pub_vel_cmd.publish(self.vel_cmd)
-        # string = ""
-        # for tub in self.possible_edges:
-        #     string += str(f"{tub[0]}  {tub[2]} | ")
-        # if self.d_1 and self.d_2:
-        #     self.get_logger().info(f"theta: {self.theta} deg  {string} || {self.d_1[0]}  {self.d_2[0]}")
         if self.d_1 and self.d_2:
-            self.get_logger().info(f"theta:{self.theta:.2f} || {self.d_1[1]:.2f} * {self.d_1[2]:.2f}   {self.d_2[1]:.2f} -- {self.d_2[2]:.2f} || edges: {len(self.possible_edges)} || arc: {self.close_rays_thresh}" )
+            self.get_logger().info(f"theta:{self.theta:.2f} || {self.d_1[1]:.2f} -- {self.d_2[2]:.2f} || edges: {len(self.possible_edges)} || arc: {self.rays_radius}" )
 
 def main():
     rclpy.init()
