@@ -43,7 +43,7 @@ class SteeringSpeedNode(Node):
         self.close_edges_thresh = self.close_edges_thresh_param.get_parameter_value().double_value
         self.kp_param = self.declare_parameter("kp", 1.0)
         self.kp = self.kp_param.get_parameter_value().double_value
-
+        self.dangerous_edges = []
         listener = keyboard.Listener(
             on_press=self.on_press,
             on_release=self.on_release
@@ -80,28 +80,6 @@ class SteeringSpeedNode(Node):
         
         return possible_edges
 
-    def find_critical_two_edges(self, poss_edges:list):
-        # find the most dangerous edges
-        dangerous_edge = poss_edges[0]
-        smallest_dist = poss_edges[0][1]
-        for curr_edge in poss_edges:
-            # the close_edges_thresh is to make the readings more stable "reduces wobbling"
-            if (smallest_dist > curr_edge[1]) and abs(smallest_dist - curr_edge[1]) > self.close_edges_thresh:
-                dangerous_edge = curr_edge             
-                smallest_dist = curr_edge[1]
-        
-        dangerous_edge_2nd = poss_edges[0]        
-        smallest_dist = poss_edges[0][1]
-        for curr_edge in poss_edges:
-            # the close_edges_thresh is to make the readings more stable "reduces wobbling"
-            if (smallest_dist > curr_edge[1]) and abs(smallest_dist - curr_edge[1]) > self.close_edges_thresh:
-                dangerous_edge_2nd = curr_edge             
-                smallest_dist = curr_edge[1]
-            if dangerous_edge_2nd == dangerous_edge:
-                dangerous_edge_2nd = curr_edge
-        
-        return dangerous_edge, dangerous_edge_2nd
-
     def find_n_critical_edges(self, poss_edges:list, n):
         dangerous_edges = []
         if len(poss_edges) <= n:
@@ -116,30 +94,28 @@ class SteeringSpeedNode(Node):
             dangerous_edges.append(curr_dangerous_edge)
         return dangerous_edges
 
-    def filter_scan(self, d_1, d_2):
+    def filter_scan(self, dangerous_edges):
         filtered_scan_msg = copy.deepcopy(self.scan_msg)
-        # check if the edge is very far away
-        if self.d_1[1] > self.min_distance and self.d_2[1] > self.min_distance:
-            avg_dist_x = min(self.d_1[1], self.d_2[1])
-            m = (self.close_rays_thresh - self.far_rays_thresh)/(self.min_distance - self.max_distance)
-            c = self.close_rays_thresh - m*self.min_distance
-            self.rays_radius = int(m*avg_dist_x + c)
-            # cap the rays_thresh
-            if self.rays_radius > self.close_rays_thresh_param.get_parameter_value().integer_value:
+        for curr_edge in dangerous_edges:
+            # check if the edge is very far away
+            if curr_edge[1] > self.min_distance:
+                dist_x = curr_edge[1]
+                m = (self.close_rays_thresh - self.far_rays_thresh)/(self.min_distance - self.max_distance)
+                c = self.close_rays_thresh - m*self.min_distance
+                self.rays_radius = int(m*dist_x + c)
+                # cap the rays_thresh
+                if self.rays_radius > self.close_rays_thresh_param.get_parameter_value().integer_value:
+                    self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
+                if self.rays_radius < self.far_rays_thresh_param.get_parameter_value().integer_value:
+                    self.rays_radius = self.far_rays_thresh_param.get_parameter_value().integer_value
+            else:
                 self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
-            if self.rays_radius < self.far_rays_thresh_param.get_parameter_value().integer_value:
-                self.rays_radius = self.far_rays_thresh_param.get_parameter_value().integer_value
-        else:
-            self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
 
-        for i in range(-self.rays_radius//2, self.rays_radius//2):
-            var_index = (i + d_1[0])
-            var_index_2nd = (i + d_2[0])
-            if 0 <= var_index < len(filtered_scan_msg.ranges):
-                # filter the readings
-                filtered_scan_msg.ranges[var_index] = d_1[1]
-            if 0 <= var_index_2nd < len(filtered_scan_msg.ranges):
-                filtered_scan_msg.ranges[var_index_2nd] = d_2[1]
+            # filter the readings
+            for i in range(-self.rays_radius//2, self.rays_radius//2):
+                var_index = (i + curr_edge[0])
+                if 0 <= var_index < len(filtered_scan_msg.ranges):
+                    filtered_scan_msg.ranges[var_index] = curr_edge[1]
 
         return filtered_scan_msg
 
@@ -161,15 +137,10 @@ class SteeringSpeedNode(Node):
         if len(possible_edges) == 0:
             return 0.0        
 
-        d_1, d_2 = self.find_critical_two_edges(possible_edges)
         self.dangerous_edges = self.find_n_critical_edges(possible_edges, 2)
 
-        # to print the dangerous distances
-        self.d_1 = d_1
-        self.d_2 = d_2
-
         # filter scan message
-        filtered_scan_msg = self.filter_scan(d_1=d_1, d_2=d_2)
+        filtered_scan_msg = self.filter_scan(dangerous_edges=self.dangerous_edges)
 
         # publish filtered scan data
         self.filtered_laser_scan_pub.publish(filtered_scan_msg)
@@ -193,8 +164,8 @@ class SteeringSpeedNode(Node):
         steering_angle = math.radians(steering_angle)
         self.vel_cmd.drive.steering_angle = steering_angle
         self.pub_vel_cmd.publish(self.vel_cmd)
-        if self.d_1 and self.d_2 and self.dangerous_edges:
-            self.get_logger().info(f"theta:{self.theta:.2f} || {self.d_1[1]:.2f} -- {self.d_2[1]:.2f} || edges: {len(self.possible_edges)} || arc: {self.rays_radius} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+        if self.dangerous_edges:
+            self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || arc: {self.rays_radius} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()
