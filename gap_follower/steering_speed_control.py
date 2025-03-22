@@ -44,6 +44,8 @@ class SteeringSpeedNode(Node):
         self.kp_param = self.declare_parameter("kp", 1.0)
         self.kp = self.kp_param.get_parameter_value().double_value
         self.dangerous_edges = []
+        self.dangerous_edges_distances = []
+        self.rays_radius = 0
         listener = keyboard.Listener(
             on_press=self.on_press,
             on_release=self.on_release
@@ -74,13 +76,21 @@ class SteeringSpeedNode(Node):
         ranges = scan_msg.ranges
         possible_edges = []
         for i in range(self.smaller_angle_index, self.bigger_angle_index-1):
-            if abs(ranges[i] - ranges[i+1]) > self.obs_thresh: # we found an edge (index, distance, angle)
+            is_left = True
+            if abs(ranges[i] - ranges[i+1]) > self.obs_thresh: # we found an edge (index, distance, angle, is_left)
+                # we iterate from right to left
+                if ranges[i] > ranges[i+1]: # that means we want to block the right block
+                    is_left = False
+                else:
+                    is_left = True
                 angle = math.degrees(scan_msg.angle_min + scan_msg.angle_increment * i)
-                possible_edges.append((i, min(ranges[i], ranges[i+1]), angle))
+                possible_edges.append((i, min(ranges[i], ranges[i+1]), angle, is_left))
         
         return possible_edges
 
-    def find_n_critical_edges(self, poss_edges:list, n):
+    def find_n_critical_edges_2(self, poss_edges:list, n):
+        if len(poss_edges) == 0:
+            return []
         dangerous_edges = []
         if len(poss_edges) <= n:
             n = len(poss_edges)
@@ -91,12 +101,26 @@ class SteeringSpeedNode(Node):
                 if (curr_edge[1] < smallest_dist) and (abs(smallest_dist - curr_edge[1]) > self.close_edges_thresh) and (curr_edge not in dangerous_edges):
                     smallest_dist = curr_edge[1]
                     curr_dangerous_edge = curr_edge
-            dangerous_edges.append(curr_dangerous_edge)
+            dangerous_edges.append(copy.deepcopy(curr_dangerous_edge))
+        return dangerous_edges
+    
+    def find_n_critical_edges(self, poss_edges:list, n):
+        if len(poss_edges) == 0:
+            return []
+        # sort ascendingly
+        dangerous_edges = []
+        poss_edges_sorted = sorted(poss_edges, key=lambda x: x[1])
+        if len(poss_edges) < n:
+            n = len(poss_edges)
+        for i in range(n):
+            dangerous_edges.append(poss_edges_sorted[i])
         return dangerous_edges
 
-    def filter_scan(self, dangerous_edges):
-        filtered_scan_msg = copy.deepcopy(self.scan_msg)
-        for curr_edge in dangerous_edges:
+    def filter_scan(self, scan_msg:LaserScan, dangerous_edges:list):
+        filtered_scan_msg = copy.deepcopy(scan_msg)
+        # this is very important to filter the readings fromt the least significant edge to the most one
+        dangerous_edges_sorted = sorted(dangerous_edges, key=lambda x: x[1], reverse=True)
+        for curr_edge in dangerous_edges_sorted:
             # check if the edge is very far away
             if curr_edge[1] > self.min_distance:
                 dist_x = curr_edge[1]
@@ -110,9 +134,17 @@ class SteeringSpeedNode(Node):
                     self.rays_radius = self.far_rays_thresh_param.get_parameter_value().integer_value
             else:
                 self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
-
+    
+            from_index = -self.rays_radius//2
+            to_index = self.rays_radius//2
+            # if curr_edge[3] == False: # block right
+            #     from_index = -self.rays_radius//2
+            #     to_index = 0
+            # else: # block left
+            #     from_index = 0
+            #     to_index = self.rays_radius//2
             # filter the readings
-            for i in range(-self.rays_radius//2, self.rays_radius//2):
+            for i in range(from_index, to_index):
                 var_index = (i + curr_edge[0])
                 if 0 <= var_index < len(filtered_scan_msg.ranges):
                     filtered_scan_msg.ranges[var_index] = curr_edge[1]
@@ -135,13 +167,12 @@ class SteeringSpeedNode(Node):
         possible_edges = self.find_possible_edges(scan_msg=self.scan_msg)
         self.possible_edges = possible_edges
         if len(possible_edges) == 0:
-            return 0.0        
-
+            return 0.0  
+        
         self.dangerous_edges = self.find_n_critical_edges(possible_edges, 2)
-
         # filter scan message
-        filtered_scan_msg = self.filter_scan(dangerous_edges=self.dangerous_edges)
-
+        filtered_scan_msg = self.filter_scan(self.scan_msg, self.dangerous_edges)
+        
         # publish filtered scan data
         self.filtered_laser_scan_pub.publish(filtered_scan_msg)
 
@@ -175,4 +206,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
