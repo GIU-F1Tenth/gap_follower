@@ -104,7 +104,9 @@ class SteeringSpeedNode(Node):
         filtered_scan_msg = copy.deepcopy(scan_msg)
         # this is very important to filter the readings fromt the least significant edge to the most one
         # because we overwrite the least important dangerous edge by the important one.
-        # we iterate in reversed order to move from the least dangerous edge to the most dangerous ones
+        # we iterate in reversed order to move from the least dangerous edge to the most dangerous ones.
+        # we can improve and decide when the car has a very far prespective it unifies all distances greater
+        # than max_distance into max_distance and then go in the middle of this circle. 
         for curr_edge in reversed(sorted_dangerous_edges):
             # check if the edge is more than the min distance
             if curr_edge[1] > self.min_distance:
