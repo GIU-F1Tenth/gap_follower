@@ -29,8 +29,6 @@ class SteeringSpeedNode(Node):
         self.obs_thresh = self.obs_thresh_param.get_parameter_value().double_value     
         self.theta = 0.0  
         self.possible_edges = []
-        self.d_1 = None
-        self.d_2 = None
         self.close_rays_thresh_param = self.declare_parameter("close_rays_thresh", 170)
         self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
         self.far_rays_thresh_param = self.declare_parameter("far_rays_thresh", 50)
@@ -43,8 +41,10 @@ class SteeringSpeedNode(Node):
         self.close_edges_thresh = self.close_edges_thresh_param.get_parameter_value().double_value
         self.kp_param = self.declare_parameter("kp", 1.0)
         self.kp = self.kp_param.get_parameter_value().double_value
+        self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
+        self.right_left_distance_thresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
+        self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90)
         self.dangerous_edges = []
-        self.dangerous_edges_distances = []
         self.rays_radius = 0
         listener = keyboard.Listener(
             on_press=self.on_press,
@@ -60,7 +60,7 @@ class SteeringSpeedNode(Node):
             if key.char == 'w':
                 self.vel_cmd.drive.speed = 1.8
             if key.char == 'b':
-                self.vel_cmd.drive.speed = 6.0
+                self.vel_cmd.drive.speed = 6.5
         except AttributeError:
             self.get_logger().warn("error while sending.. :(")
 
@@ -87,22 +87,6 @@ class SteeringSpeedNode(Node):
                 possible_edges.append((i, min(ranges[i], ranges[i+1]), angle, is_left))
         
         return possible_edges
-
-    def find_n_critical_edges_2(self, poss_edges:list, n):
-        if len(poss_edges) == 0:
-            return []
-        dangerous_edges = []
-        if len(poss_edges) <= n:
-            n = len(poss_edges)
-        for i in range(n):
-            smallest_dist = poss_edges[0][1]
-            curr_dangerous_edge = poss_edges[0]
-            for curr_edge in poss_edges:
-                if (curr_edge[1] < smallest_dist) and (abs(smallest_dist - curr_edge[1]) > self.close_edges_thresh) and (curr_edge not in dangerous_edges):
-                    smallest_dist = curr_edge[1]
-                    curr_dangerous_edge = curr_edge
-            dangerous_edges.append(copy.deepcopy(curr_dangerous_edge))
-        return dangerous_edges
     
     def find_n_critical_edges(self, poss_edges:list, n):
         if len(poss_edges) == 0:
@@ -119,6 +103,7 @@ class SteeringSpeedNode(Node):
     def filter_scan(self, scan_msg:LaserScan, dangerous_edges:list):
         filtered_scan_msg = copy.deepcopy(scan_msg)
         # this is very important to filter the readings fromt the least significant edge to the most one
+        # because we overwrite the least important dangerous edge by the important one
         dangerous_edges_sorted = sorted(dangerous_edges, key=lambda x: x[1], reverse=True)
         for curr_edge in dangerous_edges_sorted:
             # check if the edge is very far away
@@ -137,13 +122,6 @@ class SteeringSpeedNode(Node):
     
             from_index = -self.rays_radius//2
             to_index = self.rays_radius//2
-            # if curr_edge[3] == False: # block right
-            #     from_index = -self.rays_radius//2
-            #     to_index = 0
-            # else: # block left
-            #     from_index = 0
-            #     to_index = self.rays_radius//2
-            # filter the readings
             for i in range(from_index, to_index):
                 var_index = (i + curr_edge[0])
                 if 0 <= var_index < len(filtered_scan_msg.ranges):
@@ -152,6 +130,13 @@ class SteeringSpeedNode(Node):
         return filtered_scan_msg
 
     def find_theta_from_longest_ray(self, filtered_scan_msg: LaserScan):
+        # check if the sides of the car are occupied
+        # to continue moving if the car is close to the sides of the track
+        # right_index = int((math.radians(-self.right_left_sides_angle_param.get_parameter_value().double_value) - self.scan_msg.angle_min)/self.scan_msg.angle_increment)
+        # left_index = int((math.radians(self.right_left_sides_angle_param.get_parameter_value().double_value) - self.scan_msg.angle_min)/self.scan_msg.angle_increment)
+        # if self.scan_msg.ranges[right_index] < self.right_left_distance_thresh or self.scan_msg.ranges[left_index] < self.right_left_distance_thresh:
+        #     self.get_logger().info("continue moving --> close wall")
+        #     return 0.0
         # get the longest ray
         the_longest_ray = -1.0
         for i in range(self.smaller_angle_index, self.bigger_angle_index):
