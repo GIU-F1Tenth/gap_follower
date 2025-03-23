@@ -45,7 +45,6 @@ class SteeringSpeedNode(Node):
         self.right_left_distance_thresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
         self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90)
         self.dangerous_edges = []
-        self.rays_radius = 0
         listener = keyboard.Listener(
             on_press=self.on_press,
             on_release=self.on_release
@@ -77,24 +76,24 @@ class SteeringSpeedNode(Node):
         possible_edges = []
         for i in range(self.smaller_angle_index, self.bigger_angle_index-1):
             is_left = True
-            if abs(ranges[i] - ranges[i+1]) > self.obs_thresh: # we found an edge (index, distance, angle, is_left)
+            if abs(ranges[i] - ranges[i+1]) > self.obs_thresh: # we found an edge (index, distance, angle, is_left, rays_radius)
                 # we iterate from right to left
                 if ranges[i] > ranges[i+1]: # that means we want to block the right block
                     is_left = False
                 else:
                     is_left = True
                 angle = math.degrees(scan_msg.angle_min + scan_msg.angle_increment * i)
-                possible_edges.append((i, min(ranges[i], ranges[i+1]), angle, is_left))
+                possible_edges.append([i, min(ranges[i], ranges[i+1]), angle, is_left, 0.0]) # keep it 0.0 as we know when problems happen
         
         return possible_edges
     
     def find_n_critical_edges(self, poss_edges:list, n):
         if len(poss_edges) == 0:
             return []
-        # sort ascendingly
+        # sort ascendingly based on the distance -> '[1]'
         dangerous_edges = []
         poss_edges_sorted = sorted(poss_edges, key=lambda x: x[1])
-        if len(poss_edges) < n:
+        if len(poss_edges) < n: # if the desired number of critical edges was more that the number of the critical edges
             n = len(poss_edges)
         for i in range(n):
             dangerous_edges.append(poss_edges_sorted[i])
@@ -103,25 +102,29 @@ class SteeringSpeedNode(Node):
     def filter_scan(self, scan_msg:LaserScan, dangerous_edges:list):
         filtered_scan_msg = copy.deepcopy(scan_msg)
         # this is very important to filter the readings fromt the least significant edge to the most one
-        # because we overwrite the least important dangerous edge by the important one
-        dangerous_edges_sorted = sorted(dangerous_edges, key=lambda x: x[1], reverse=True)
-        for curr_edge in dangerous_edges_sorted:
-            # check if the edge is very far away
+        # because we overwrite the least important dangerous edge by the important one.
+        # sort based on the distance -> '[1]'
+        # dangerous_edges_sorted = sorted(dangerous_edges, key=lambda x: x[1], reverse=True)
+        dangerous_edges.sort(key=lambda x: x[1], reverse=True)
+        for curr_edge in dangerous_edges:
+            # check if the edge is more than the min distance
             if curr_edge[1] > self.min_distance:
                 dist_x = curr_edge[1]
                 m = (self.close_rays_thresh - self.far_rays_thresh)/(self.min_distance - self.max_distance)
                 c = self.close_rays_thresh - m*self.min_distance
-                self.rays_radius = int(m*dist_x + c)
+                rays_radius = int(m*dist_x + c)
                 # cap the rays_thresh
-                if self.rays_radius > self.close_rays_thresh_param.get_parameter_value().integer_value:
-                    self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
-                if self.rays_radius < self.far_rays_thresh_param.get_parameter_value().integer_value:
-                    self.rays_radius = self.far_rays_thresh_param.get_parameter_value().integer_value
+                if rays_radius > self.close_rays_thresh:
+                    rays_radius = self.close_rays_thresh
+                if rays_radius < self.far_rays_thresh:
+                    rays_radius = self.far_rays_thresh
             else:
-                self.rays_radius = self.close_rays_thresh_param.get_parameter_value().integer_value
-    
-            from_index = -self.rays_radius//2
-            to_index = self.rays_radius//2
+                rays_radius = self.close_rays_thresh
+            # adding the rays thresh to the dangerous edges (index, distance, angle, is_left, rays_radius)
+            curr_edge[4] = rays_radius
+
+            from_index = -rays_radius//2
+            to_index = rays_radius//2
             for i in range(from_index, to_index):
                 var_index = (i + curr_edge[0])
                 if 0 <= var_index < len(filtered_scan_msg.ranges):
@@ -171,6 +174,9 @@ class SteeringSpeedNode(Node):
         bigger_angle = math.radians(self.limit_angle)
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
         self.theta = self.get_theta_target_5()
+        if self.dangerous_edges:
+            self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+
 
     def follow_the_gap(self):
         ref_angle = 0.0
@@ -180,8 +186,6 @@ class SteeringSpeedNode(Node):
         steering_angle = math.radians(steering_angle)
         self.vel_cmd.drive.steering_angle = steering_angle
         self.pub_vel_cmd.publish(self.vel_cmd)
-        if self.dangerous_edges:
-            self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || arc: {self.rays_radius} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()
