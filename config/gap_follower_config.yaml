@@ -8,8 +8,8 @@ gap_steering_node:
     obstacle_distance_thresh: 1.2
     close_rays_thresh: 200
     far_rays_thresh: 40
-    min_ray_distance: 0.2
-    max_ray_distance: 12.0
+    min_distance: 0.2
+    max_distance: 12.0
     close_edges_thresh: 0.15
     right_left_distance_thresh: 0.4
     right_left_sides_angle: 90.0
