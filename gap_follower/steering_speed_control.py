@@ -71,7 +71,7 @@ class SteeringSpeedNode(Node):
             # Stop listener
             return False
     
-    def find_possible_edges(self, scan_msg: LaserScan):
+    def find_sorted_possible_edges(self, scan_msg: LaserScan):
         ranges = scan_msg.ranges
         possible_edges = []
         for i in range(self.smaller_angle_index, self.bigger_angle_index-1):
@@ -85,28 +85,27 @@ class SteeringSpeedNode(Node):
                 angle = math.degrees(scan_msg.angle_min + scan_msg.angle_increment * i)
                 possible_edges.append([i, min(ranges[i], ranges[i+1]), angle, is_left, 0.0]) # keep it 0.0 as we know when problems happen
         
+        # sorted ascendingly based on the distance of each edge
+        possible_edges.sort(key=lambda x: x[1])
         return possible_edges
     
-    def find_n_critical_edges(self, poss_edges:list, n):
-        if len(poss_edges) == 0:
+    def find_n_critical_edges(self, sorted_poss_edges:list, n):
+        # the dangerous edges are sorted ascendingly
+        if len(sorted_poss_edges) == 0:
             return []
-        # sort ascendingly based on the distance -> '[1]'
-        dangerous_edges = []
-        poss_edges_sorted = sorted(poss_edges, key=lambda x: x[1])
-        if len(poss_edges) < n: # if the desired number of critical edges was more that the number of the critical edges
-            n = len(poss_edges)
+        sorted_dangerous_edges = []
+        if len(sorted_poss_edges) < n: # if the desired number of critical edges was more that the number of the critical edges
+            n = len(sorted_poss_edges)
         for i in range(n):
-            dangerous_edges.append(poss_edges_sorted[i])
-        return dangerous_edges
+            sorted_dangerous_edges.append(sorted_poss_edges[i])
+        return sorted_dangerous_edges
 
-    def filter_scan(self, scan_msg:LaserScan, dangerous_edges:list):
+    def filter_scan(self, scan_msg:LaserScan, sorted_dangerous_edges:list):
         filtered_scan_msg = copy.deepcopy(scan_msg)
         # this is very important to filter the readings fromt the least significant edge to the most one
         # because we overwrite the least important dangerous edge by the important one.
-        # sort based on the distance -> '[1]'
-        # dangerous_edges_sorted = sorted(dangerous_edges, key=lambda x: x[1], reverse=True)
-        dangerous_edges.sort(key=lambda x: x[1], reverse=True)
-        for curr_edge in dangerous_edges:
+        # we iterate in reversed order to move from the least dangerous edge to the most dangerous ones
+        for curr_edge in reversed(sorted_dangerous_edges):
             # check if the edge is more than the min distance
             if curr_edge[1] > self.min_distance:
                 dist_x = curr_edge[1]
@@ -152,7 +151,7 @@ class SteeringSpeedNode(Node):
     def get_theta_target_5(self):
         
         # find the possible edges
-        possible_edges = self.find_possible_edges(scan_msg=self.scan_msg)
+        possible_edges = self.find_sorted_possible_edges(scan_msg=self.scan_msg)
         self.possible_edges = possible_edges
         if len(possible_edges) == 0:
             return 0.0  
