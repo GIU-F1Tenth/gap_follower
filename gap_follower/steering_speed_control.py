@@ -7,7 +7,6 @@ from ackermann_msgs.msg import AckermannDriveStamped
 from sensor_msgs.msg import LaserScan
 from sensor_msgs.msg import Joy
 import math
-# from pynput import keyboard
 import copy
 
 class SteeringSpeedNode(Node):
@@ -48,32 +47,22 @@ class SteeringSpeedNode(Node):
         self.constant_speed_param = self.declare_parameter('constant_speed', 1.0)
         self.constant_speed = self.constant_speed_param.get_parameter_value().double_value
         self.dangerous_edges = []
-        
-        # listener = keyboard.Listener(
-        #     on_press=self.on_press,
-        #     on_release=self.on_release
-        # )
-        # listener.start()
+        self.subscription = self.create_subscription(
+            Joy,
+            'joy',
+            self.joy_callback,
+            10
+        )
+    
+    def joy_callback(self, msg:Joy):
+        if msg.buttons[4]:
+            # just for testing
+            self.vel_cmd.drive.speed = self.constant_speed
+        else:
+            self.vel_cmd.drive.speed = 0.0
 
-    # def on_press(self, key):
-    #     try:
-    #         if key.char == 's':
-    #             # self.start_algorithm = True
-    #             self.vel_cmd.drive.speed = -0.8
-    #         if key.char == 'w':
-    #             self.vel_cmd.drive.speed = 1.8
-    #         if key.char == 'b':
-    #             self.vel_cmd.drive.speed = 6.5
-    #     except AttributeError:
-    #         self.get_logger().warn("error while sending.. :(")
+        self.get_logger().info(f'Axes: {msg.axes}, Buttons: {msg.buttons}')
 
-    # def on_release(self, key):
-    #     # Stop the robot when the key is released
-    #     # self.start_algorithm = False
-    #     self.vel_cmd.drive.speed = 0.0
-    #     if key == keyboard.Key.esc:
-    #         # Stop listener
-    #         return False
     
     def find_sorted_possible_edges(self, scan_msg: LaserScan):
         ranges = scan_msg.ranges
@@ -187,11 +176,7 @@ class SteeringSpeedNode(Node):
         p_controller = self.kp * error
         steering_angle = p_controller
         steering_angle = math.radians(steering_angle)
-        self.vel_cmd.drive.steering_angle = steering_angle
-
-        # just for testing
-        self.vel_cmd.drive.speed = self.constant_speed
-        
+        self.vel_cmd.drive.steering_angle = steering_angle        
         self.pub_vel_cmd.publish(self.vel_cmd)
 
 def main():
