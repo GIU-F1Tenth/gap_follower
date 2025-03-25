@@ -11,7 +11,7 @@ import copy
 
 class SteeringSpeedNode(Node):
     def __init__(self):
-        super().__init__("gap_steering_node")
+        super().__init__("gap_steering_joy_node")
         self.get_logger().info("the steering node has started")
         self.scan_param = self.declare_parameter("scan_topic", "/scan")
         self.sub_scan = self.create_subscription(LaserScan, self.scan_param.get_parameter_value().string_value, self.filter_scan_cb, 10)
@@ -44,6 +44,8 @@ class SteeringSpeedNode(Node):
         self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
         self.right_left_distance_thresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
         self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90)
+        self.constant_speed_param = self.declare_parameter('constant_speed', 1.0)
+        self.constant_speed = self.constant_speed_param.get_parameter_value().double_value
         self.dangerous_edges = []
         listener = keyboard.Listener(
             on_press=self.on_press,
@@ -184,6 +186,10 @@ class SteeringSpeedNode(Node):
         steering_angle = p_controller
         steering_angle = math.radians(steering_angle)
         self.vel_cmd.drive.steering_angle = steering_angle
+
+        # just for testing
+        self.vel_cmd.drive.speed = self.constant_speed
+        
         self.pub_vel_cmd.publish(self.vel_cmd)
 
 def main():
