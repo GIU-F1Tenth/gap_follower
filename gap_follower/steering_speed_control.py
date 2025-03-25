@@ -5,6 +5,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from ackermann_msgs.msg import AckermannDriveStamped
 from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Joy
 import math
 # from pynput import keyboard
 import copy
@@ -47,6 +48,7 @@ class SteeringSpeedNode(Node):
         self.constant_speed_param = self.declare_parameter('constant_speed', 1.0)
         self.constant_speed = self.constant_speed_param.get_parameter_value().double_value
         self.dangerous_edges = []
+        
         # listener = keyboard.Listener(
         #     on_press=self.on_press,
         #     on_release=self.on_release
