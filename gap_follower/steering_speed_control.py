@@ -27,8 +27,7 @@ class SteeringSpeedNode(Node):
         self.vel_cmd = AckermannDriveStamped()
         self.obs_thresh_param = self.declare_parameter("obstacle_distance_thresh", 0.8)
         self.obs_thresh = self.obs_thresh_param.get_parameter_value().double_value     
-        self.theta = 0.0 
-        self.steering_angle = 0.0
+        self.theta = 0.0  
         self.possible_edges = []
         self.close_rays_thresh_param = self.declare_parameter("close_rays_thresh", 170)
         self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
@@ -43,23 +42,21 @@ class SteeringSpeedNode(Node):
         self.kp_param = self.declare_parameter("kp", 1.0)
         self.kp = self.kp_param.get_parameter_value().double_value
         self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
-        self.right_left_distance_thyresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
-        self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90.0)
+        self.right_left_distance_thresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
+        self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90)
         self.constant_speed_param = self.declare_parameter('constant_speed', 1.0)
         self.constant_speed = self.constant_speed_param.get_parameter_value().double_value
         self.dangerous_edges = []
         self.joy_sub = self.create_subscription(Joy, '/joy', self.joy_callback, 10)
     
     def joy_callback(self, msg:Joy):
-        if msg.buttons[3] == 1:
-            self.vel_cmd.drive.speed = self.constant_speed
-        elif msg.buttons[0] == 1:
-            self.vel_cmd.drive.speed = -self.constant_speed
-        elif msg.buttons[4] == 1:
+        if msg.buttons[4]:
             # just for testing
             self.vel_cmd.drive.speed = self.constant_speed
         else:
             self.vel_cmd.drive.speed = 0.0
+
+        self.get_logger().info(f'Axes: {msg.axes}, Buttons: {msg.buttons}')
 
     
     def find_sorted_possible_edges(self, scan_msg: LaserScan):
@@ -99,19 +96,11 @@ class SteeringSpeedNode(Node):
         # we can improve and decide when the car has a very far prespective it unifies all distances greater
         # than max_distance into max_distance and then go in the middle of this circle. 
         for curr_edge in reversed(sorted_dangerous_edges):
-            # check if the edge is more than the min distance
-            if curr_edge[1] > self.min_distance:
-                dist_x = curr_edge[1]
-                m = (self.close_rays_thresh - self.far_rays_thresh)/(self.min_distance - self.max_distance)
-                c = self.close_rays_thresh - m*self.min_distance
-                rays_radius = int(m*dist_x + c)
-                # cap the rays_thresh
-                if rays_radius > self.close_rays_thresh:
-                    rays_radius = self.close_rays_thresh
-                if rays_radius < self.far_rays_thresh:
-                    rays_radius = self.far_rays_thresh
-            else:
-                rays_radius = self.close_rays_thresh + 100
+
+            theta_radd = 0.6/curr_edge[1]
+            rays_radius = int(theta_radd/scan_msg.angle_increment)
+            rays_radius *= 2
+
             # adding the rays thresh to the dangerous edges (index, distance, angle, is_left, rays_radius)
             curr_edge[4] = rays_radius
 
@@ -166,16 +155,16 @@ class SteeringSpeedNode(Node):
         bigger_angle = math.radians(self.limit_angle)
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
         self.theta = self.get_theta_target_5()
+        self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
     def follow_the_gap(self):
         ref_angle = 0.0
         error = (self.theta - ref_angle)
         p_controller = self.kp * error
         steering_angle = p_controller
-        self.steering_angle = math.radians(steering_angle)
-        self.vel_cmd.drive.steering_angle = self.steering_angle 
+        steering_angle = math.radians(steering_angle)
+        self.vel_cmd.drive.steering_angle = steering_angle        
         self.pub_vel_cmd.publish(self.vel_cmd)
-        # self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()
