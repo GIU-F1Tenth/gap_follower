@@ -47,12 +47,7 @@ class SteeringSpeedNode(Node):
         self.constant_speed_param = self.declare_parameter('constant_speed', 1.0)
         self.constant_speed = self.constant_speed_param.get_parameter_value().double_value
         self.dangerous_edges = []
-        self.subscription = self.create_subscription(
-            Joy,
-            'joy',
-            self.joy_callback,
-            10
-        )
+        self.joy_sub = self.create_subscription(Joy, '/joy', self.joy_callback, 10)
     
     def joy_callback(self, msg:Joy):
         if msg.buttons[4]:
