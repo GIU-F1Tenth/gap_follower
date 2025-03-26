@@ -26,7 +26,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "steering_speed_exe = gap_follower.steering_speed_control:main"
+            "steering_speed_exe = gap_follower.steering_speed_control:main",
+            "twist2ackermann_converter_exe = gap_follower.twist2ackermann_converter_node:main"
         ],
     },
 )
