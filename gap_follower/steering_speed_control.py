@@ -108,19 +108,9 @@ class SteeringSpeedNode(Node):
         # we can improve and decide when the car has a very far prespective it unifies all distances greater
         # than max_distance into max_distance and then go in the middle of this circle. 
         for curr_edge in reversed(sorted_dangerous_edges):
-            # check if the edge is more than the min distance
-            if curr_edge[1] > self.min_distance:
-                dist_x = curr_edge[1]
-                m = (self.close_rays_thresh - self.far_rays_thresh)/(self.min_distance - self.max_distance)
-                c = self.close_rays_thresh - m*self.min_distance
-                rays_radius = int(m*dist_x + c)
-                # cap the rays_thresh
-                if rays_radius > self.close_rays_thresh:
-                    rays_radius = self.close_rays_thresh
-                if rays_radius < self.far_rays_thresh:
-                    rays_radius = self.far_rays_thresh
-            else:
-                rays_radius = self.close_rays_thresh
+            theta_radd = 0.6/curr_edge[1]
+            rays_radius = int(theta_radd/scan_msg.angle_increment)
+            rays_radius *= 2
             # adding the rays thresh to the dangerous edges (index, distance, angle, is_left, rays_radius)
             curr_edge[4] = rays_radius
 
