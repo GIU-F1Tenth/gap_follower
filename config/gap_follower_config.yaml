@@ -1,16 +1,16 @@
 gap_steering_node:
   ros__parameters:
     scan_topic: "/scan"
-    drive_topic: "/drive"
+    drive_topic: "/ackermann_cmd"
     filtered_scan_topic: "/filtered_scan"
-    limit_angle: 80.0
-    kp: 1.1
-    obstacle_distance_thresh: 1.2
-    close_rays_thresh: 200
-    far_rays_thresh: 40
-    min_distance: 0.2
-    max_distance: 12.0
+    limit_angle: 100.0
+    kp: 1.0
+    obstacle_distance_thresh: 0.6
+    close_rays_thresh: 180
+    far_rays_thresh: 10
+    min_distance: 1.2
+    max_distance: 8.0
     close_edges_thresh: 0.15
     right_left_distance_thresh: 0.4
     right_left_sides_angle: 90.0
-    constant_speed: 1.0
+    constant_speed: 0.7
