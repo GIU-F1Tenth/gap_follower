@@ -11,7 +11,7 @@ import copy
 
 class SteeringSpeedNode(Node):
     def __init__(self):
-        super().__init__("gap_steering_node")
+        super().__init__("gap_steering_joy_node")
         self.get_logger().info("the steering node has started")
         self.scan_param = self.declare_parameter("scan_topic", "/scan")
         self.sub_scan = self.create_subscription(LaserScan, self.scan_param.get_parameter_value().string_value, self.filter_scan_cb, 10)
@@ -19,7 +19,7 @@ class SteeringSpeedNode(Node):
         self.filtered_laser_scan_pub = self.create_publisher(LaserScan, self.filtered_scan_param.get_parameter_value().string_value, 10)
         self.drive_param = self.declare_parameter("drive_topic", "/drive")
         self.pub_vel_cmd = self.create_publisher(AckermannDriveStamped, self.drive_param.get_parameter_value().string_value, 10)
-        self.tmr = self.create_timer(0.01, self.follow_the_gap)
+        self.tmr = self.create_timer(0.0001, self.follow_the_gap)
         self.limit_angle_param = self.declare_parameter("limit_angle", 70.0)
         self.limit_angle = self.limit_angle_param.get_parameter_value().double_value # in degrees
         self.scan_msg = LaserScan()
@@ -27,8 +27,20 @@ class SteeringSpeedNode(Node):
         self.vel_cmd = AckermannDriveStamped()
         self.obs_thresh_param = self.declare_parameter("obstacle_distance_thresh", 0.8)
         self.obs_thresh = self.obs_thresh_param.get_parameter_value().double_value     
-        self.theta = 0.0  
+        self.theta = 0.0 
+        self.steering_angle = 0.0
         self.possible_edges = []
+        self.kp_param = self.declare_parameter("kp", 1.0)
+        self.kp = self.kp_param.get_parameter_value().double_value
+        self.kd_param = self.declare_parameter("kd", 1.0)
+        self.kd = self.kp_param.get_parameter_value().double_value
+        self.prev_error = 0.0
+        self.constant_speed_param = self.declare_parameter('constant_speed', 1.0)
+        self.constant_speed = self.constant_speed_param.get_parameter_value().double_value
+        self.dangerous_edges = []
+        self.arc_length_param = self.declare_parameter('arc_length', 0.4)
+        self.arc_length = self.arc_length_param.get_parameter_value().double_value
+        # useless params #
         self.close_rays_thresh_param = self.declare_parameter("close_rays_thresh", 170)
         self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
         self.far_rays_thresh_param = self.declare_parameter("far_rays_thresh", 50)
@@ -37,14 +49,12 @@ class SteeringSpeedNode(Node):
         self.min_distance = self.min_distance_param.get_parameter_value().double_value
         self.max_distance_param = self.declare_parameter("max_distance", 9.0)
         self.max_distance = self.max_distance_param.get_parameter_value().double_value
+        self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
+        self.right_left_distance_thyresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
+        self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90.0)
         self.close_edges_thresh_param = self.declare_parameter("close_edges_thresh", 0.15)
         self.close_edges_thresh = self.close_edges_thresh_param.get_parameter_value().double_value
-        self.kp_param = self.declare_parameter("kp", 1.0)
-        self.kp = self.kp_param.get_parameter_value().double_value
-        self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
-        self.right_left_distance_thresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
-        self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90)
-        self.dangerous_edges = []
+
         listener = keyboard.Listener(
             on_press=self.on_press,
             on_release=self.on_release
@@ -108,9 +118,12 @@ class SteeringSpeedNode(Node):
         # we can improve and decide when the car has a very far prespective it unifies all distances greater
         # than max_distance into max_distance and then go in the middle of this circle. 
         for curr_edge in reversed(sorted_dangerous_edges):
-            theta_radd = 0.6/curr_edge[1]
-            rays_radius = int(theta_radd/scan_msg.angle_increment)
-            rays_radius *= 2
+
+            # to make the arc,the car's front end, constant
+            theta_rad = self.arc_length/curr_edge[1]
+            rays_radius = int(theta_rad/scan_msg.angle_increment)
+            rays_radius *= 2 
+
             # adding the rays thresh to the dangerous edges (index, distance, angle, is_left, rays_radius)
             curr_edge[4] = rays_radius
 
@@ -165,16 +178,19 @@ class SteeringSpeedNode(Node):
         bigger_angle = math.radians(self.limit_angle)
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
         self.theta = self.get_theta_target_5()
-        self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
     def follow_the_gap(self):
         ref_angle = 0.0
         error = (self.theta - ref_angle)
         p_controller = self.kp * error
-        steering_angle = p_controller
-        steering_angle = math.radians(steering_angle)
-        self.vel_cmd.drive.steering_angle = steering_angle
+        d_controller = (self.prev_error - error) * self.kd
+        steering_angle = p_controller + d_controller
+        self.prev_error = error
+        self.steering_angle = math.radians(steering_angle)
+        self.vel_cmd.drive.steering_angle = self.steering_angle 
         self.pub_vel_cmd.publish(self.vel_cmd)
+        self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+
 
 def main():
     rclpy.init()

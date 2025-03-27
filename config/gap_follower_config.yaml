@@ -1,7 +1,7 @@
 gap_steering_node:
   ros__parameters:
     scan_topic: "/scan"
-    drive_topic: "/ackermann_cmd"
+    drive_topic: "/drive"
     filtered_scan_topic: "/filtered_scan"
     limit_angle: 80.0
     kp: 1.0
