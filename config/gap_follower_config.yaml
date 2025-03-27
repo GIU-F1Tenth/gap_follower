@@ -5,7 +5,7 @@ gap_steering_node:
     filtered_scan_topic: "/filtered_scan"
     limit_angle: 80.0
     kp: 1.0
-    kd: 1.0
+    kd: 1.5
     arc_length: 0.4
     obstacle_distance_thresh: 0.6
     constant_speed: 2.5
