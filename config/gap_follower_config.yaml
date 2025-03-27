@@ -3,7 +3,7 @@ gap_steering_node:
     scan_topic: "/scan"
     drive_topic: "/drive"
     filtered_scan_topic: "/filtered_scan"
-    limit_angle: 80.0
+    limit_angle: 70.0
     kp: 1.1
     obstacle_distance_thresh: 1.2
     close_rays_thresh: 200
