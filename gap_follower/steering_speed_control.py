@@ -40,15 +40,20 @@ class SteeringSpeedNode(Node):
         self.dangerous_edges = []
         self.arc_length_param = self.declare_parameter('arc_length', 0.4)
         self.arc_length = self.arc_length_param.get_parameter_value().double_value
+        self.min_distance_param = self.declare_parameter("min_distance", 5.0)
+        self.min_distance = self.min_distance_param.get_parameter_value().double_value
+        self.max_distance_param = self.declare_parameter("max_distance", 9.0)
+        self.max_distance = self.max_distance_param.get_parameter_value().double_value
+        self.min_vel_param = self.declare_parameter('min_vel', 0.2)
+        self.min_vel = self.min_vel_param.get_parameter_value().double_value
+        self.max_vel_param = self.declare_parameter('max_vel', 5.0)
+        self.max_vel = self.max_vel_param.get_parameter_value().double_value
+        self.linear_velocity = 0.0
         # useless params #
         self.close_rays_thresh_param = self.declare_parameter("close_rays_thresh", 170)
         self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
         self.far_rays_thresh_param = self.declare_parameter("far_rays_thresh", 50)
         self.far_rays_thresh = self.far_rays_thresh_param.get_parameter_value().integer_value
-        self.min_distance_param = self.declare_parameter("min_distance", 5.0)
-        self.min_distance = self.min_distance_param.get_parameter_value().double_value
-        self.max_distance_param = self.declare_parameter("max_distance", 9.0)
-        self.max_distance = self.max_distance_param.get_parameter_value().double_value
         self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
         self.right_left_distance_thyresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
         self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90.0)
@@ -64,12 +69,12 @@ class SteeringSpeedNode(Node):
     
     def joy_callback(self, msg:Joy):
         if msg.buttons[3] == 1:
-            self.vel_cmd.drive.speed = self.constant_speed
+            self.vel_cmd.drive.speed = self.linear_velocity
         elif msg.buttons[0] == 1:
-            self.vel_cmd.drive.speed = -self.constant_speed
+            self.vel_cmd.drive.speed = -self.linear_velocity
         elif msg.buttons[4] == 1:
             # just for testing
-            self.vel_cmd.drive.speed = self.constant_speed
+            self.vel_cmd.drive.speed = self.linear_velocity
         else:
             self.vel_cmd.drive.speed = 0.0
 
@@ -163,6 +168,16 @@ class SteeringSpeedNode(Node):
 
         return self.find_theta_from_longest_ray(filtered_scan_msg)
  
+    def find_linear_vel(self):
+        if len(self.dangerous_edges) == 0:
+            return -0.2 # move backwards
+        
+        distance_x = self.dangerous_edges[0][1]
+        m = (self.max_vel - self.min_vel)/(self.max_distance - self.min_distance)
+        c = self.max_vel - m*(self.max_distance)
+        
+        linear_vel = m*distance_x + c
+        return linear_vel
 
     def filter_scan_cb(self, msg:LaserScan):
         self.scan_msg = msg
@@ -171,6 +186,7 @@ class SteeringSpeedNode(Node):
         bigger_angle = math.radians(self.limit_angle)
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
         self.theta = self.get_theta_target_5()
+        self.linear_velocity = self.find_linear_vel()
 
     def follow_the_gap(self):
         ref_angle = 0.0

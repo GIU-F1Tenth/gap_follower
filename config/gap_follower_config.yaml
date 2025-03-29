@@ -4,14 +4,16 @@ gap_steering_node:
     drive_topic: "/ackermann_cmd"
     filtered_scan_topic: "/filtered_scan"
     limit_angle: 80.0
-    kp: 1.0
-    kd: 1.0
+    kp: 0.51
+    kd: 1.1
     arc_length: 0.4
     obstacle_distance_thresh: 0.6
+    min_distance: 0.3
+    max_distance: 10.0
+    min_vel: 0.2
+    max_vel: 5.0
     constant_speed: 2.5
     close_edges_thresh: 0.15
-    min_distance: 1.2
-    max_distance: 8.0
     right_left_distance_thresh: 0.4
     right_left_sides_angle: 90.0
     close_rays_thresh: 180
