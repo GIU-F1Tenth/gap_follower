@@ -6,12 +6,12 @@ gap_steering_node:
     limit_angle: 80.0
     kp: 0.51
     kd: 1.1
-    arc_length: 0.4
-    obstacle_distance_thresh: 0.6
+    arc_length: 0.42
+    obstacle_distance_thresh: 0.4
     min_distance: 0.3
     max_distance: 10.0
-    min_vel: 0.2
-    max_vel: 5.0
+    min_vel: 0.5
+    max_vel: 6.0
     constant_speed: 2.5
     close_edges_thresh: 0.15
     right_left_distance_thresh: 0.4

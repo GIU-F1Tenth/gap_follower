@@ -170,9 +170,13 @@ class SteeringSpeedNode(Node):
  
     def find_linear_vel(self):
         if len(self.dangerous_edges) == 0:
-            return -0.2 # move backwards
+            return 0.0
         
         distance_x = self.dangerous_edges[0][1]
+
+        if distance_x < self.min_distance:
+            return 0.0
+
         m = (self.max_vel - self.min_vel)/(self.max_distance - self.min_distance)
         c = self.max_vel - m*(self.max_distance)
         
