@@ -40,6 +40,8 @@ class SteeringSpeedNode(Node):
         self.dangerous_edges = []
         self.arc_length_param = self.declare_parameter('arc_length', 0.4)
         self.arc_length = self.arc_length_param.get_parameter_value().double_value
+        self.linear_vel = 1.0
+        self.prev_edge = None
         # useless params #
         self.close_rays_thresh_param = self.declare_parameter("close_rays_thresh", 170)
         self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
@@ -68,8 +70,10 @@ class SteeringSpeedNode(Node):
                 self.vel_cmd.drive.speed = -0.8
             if key.char == 'w':
                 self.vel_cmd.drive.speed = 1.8
+            if key.char == 'a':
+                self.vel_cmd.drive.speed = self.linear_vel
             if key.char == 'b':
-                self.vel_cmd.drive.speed = 6.5
+                self.vel_cmd.drive.speed = 0.5
         except AttributeError:
             self.get_logger().warn("error while sending.. :(")
 
@@ -152,6 +156,24 @@ class SteeringSpeedNode(Node):
                 theta = math.degrees(filtered_scan_msg.angle_min + filtered_scan_msg.angle_increment * i)
         
         return theta
+    
+    def get_linear_vel(self):
+        self.linear_vel = 2.0
+        min_scan_ray = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+        if self.possible_edges:
+            if len(self.possible_edges) == 0:
+                if min_scan_ray <= self.min_distance:
+                    self.get_logger().info("danger")
+                    if self.prev_edge[3] == True:
+                        self.get_logger().info("back right")
+                        self.vel_cmd.drive.steering_angle = -2.7
+                    else:
+                        self.get_logger().info("back left")
+                        self.vel_cmd.drive.steering_angle = 2.7
+                    self.linear_vel = -2.0
+        else:
+            if len(self.possible_edges) > 0:
+                self.prev_edge = self.possible_edges[0]
 
     def get_theta_target_5(self):
         
@@ -188,6 +210,7 @@ class SteeringSpeedNode(Node):
         self.prev_error = error
         self.steering_angle = math.radians(steering_angle)
         self.vel_cmd.drive.steering_angle = self.steering_angle 
+        self.get_linear_vel()
         self.pub_vel_cmd.publish(self.vel_cmd)
         self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
