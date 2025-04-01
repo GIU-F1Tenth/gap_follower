@@ -200,6 +200,8 @@ class SteeringSpeedNode(Node):
         bigger_angle = math.radians(self.limit_angle)
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
         self.theta = self.get_theta_target_5()
+        self.get_linear_vel()
+
 
     def follow_the_gap(self):
         ref_angle = 0.0
@@ -210,7 +212,6 @@ class SteeringSpeedNode(Node):
         self.prev_error = error
         self.steering_angle = math.radians(steering_angle)
         self.vel_cmd.drive.steering_angle = self.steering_angle 
-        self.get_linear_vel()
         self.pub_vel_cmd.publish(self.vel_cmd)
         self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
