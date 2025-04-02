@@ -28,7 +28,6 @@ class SteeringSpeedNode(Node):
         self.obs_thresh_param = self.declare_parameter("obstacle_distance_thresh", 0.8)
         self.obs_thresh = self.obs_thresh_param.get_parameter_value().double_value     
         self.theta = 0.0 
-        self.steering_angle = 0.0
         self.possible_edges = []
         self.kp_param = self.declare_parameter("kp", 1.0)
         self.kp = self.kp_param.get_parameter_value().double_value
@@ -41,7 +40,9 @@ class SteeringSpeedNode(Node):
         self.arc_length_param = self.declare_parameter('arc_length', 0.4)
         self.arc_length = self.arc_length_param.get_parameter_value().double_value
         self.linear_vel = 1.0
+        self.steering_angle = 0.0
         self.prev_edge = None
+        self.steering_override = False
         # useless params #
         self.close_rays_thresh_param = self.declare_parameter("close_rays_thresh", 170)
         self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
@@ -73,7 +74,7 @@ class SteeringSpeedNode(Node):
             if key.char == 'a':
                 self.vel_cmd.drive.speed = self.linear_vel
             if key.char == 'b':
-                self.vel_cmd.drive.speed = 0.5
+                self.vel_cmd.drive.speed = 5.5
         except AttributeError:
             self.get_logger().warn("error while sending.. :(")
 
@@ -158,22 +159,30 @@ class SteeringSpeedNode(Node):
         return theta
     
     def get_linear_vel(self):
-        self.linear_vel = 2.0
-        min_scan_ray = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
-        if self.possible_edges:
-            if len(self.possible_edges) == 0:
-                if min_scan_ray <= self.min_distance:
-                    self.get_logger().info("danger")
-                    if self.prev_edge[3] == True:
-                        self.get_logger().info("back right")
-                        self.vel_cmd.drive.steering_angle = -2.7
-                    else:
-                        self.get_logger().info("back left")
-                        self.vel_cmd.drive.steering_angle = 2.7
-                    self.linear_vel = -2.0
+
+        if self.prev_edge == None:
+            self.get_logger().info(f"there is no prev edge")
+            self.prev_edge = [0, 0.0, False, 0] # default is right
+
+        possible_edges = self.find_sorted_possible_edges(scan_msg=self.scan_msg)
+        if len(possible_edges) == 0:
+            min_scan_ray = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+            if min_scan_ray <= self.min_distance:
+                if self.prev_edge[3] == True:
+                    self.steering_override = True
+                    self.get_logger().info("turn left")
+                    self.steering_angle = 2.7
+                else:
+                    self.steering_override = True
+                    self.get_logger().info("turn right")
+                    self.steering_angle = -2.7
+                self.linear_vel = -0.3
+            # don't accelerate if there the distance was greater IT WILL CRASHHH
         else:
-            if len(self.possible_edges) > 0:
-                self.prev_edge = self.possible_edges[0]
+            self.steering_override = False
+            self.get_logger().info("poss edges")
+            self.prev_edge = possible_edges[0]
+            self.linear_vel = 2.0
 
     def get_theta_target_5(self):
         
@@ -210,7 +219,8 @@ class SteeringSpeedNode(Node):
         d_controller = (self.prev_error - error) * self.kd
         steering_angle = p_controller + d_controller
         self.prev_error = error
-        self.steering_angle = math.radians(steering_angle)
+        if not self.steering_override:
+            self.steering_angle = math.radians(steering_angle)
         self.vel_cmd.drive.steering_angle = self.steering_angle 
         self.pub_vel_cmd.publish(self.vel_cmd)
         self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
