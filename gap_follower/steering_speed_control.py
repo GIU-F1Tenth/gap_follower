@@ -49,7 +49,7 @@ class SteeringSpeedNode(Node):
         self.max_vel_param = self.declare_parameter('max_vel', 5.0)
         self.max_vel = self.max_vel_param.get_parameter_value().double_value
         self.prev_edge = []
-        self.linear_vel = 1.0
+        self.linear_velocity = 0.0
         self.prev_edge = None
         self.override_steering = False
         # useless params #
@@ -164,39 +164,17 @@ class SteeringSpeedNode(Node):
         return self.find_theta_from_longest_ray(filtered_scan_msg)
  
     def find_linear_vel(self):
-        '''
-        it works based on the distance between the car and the closest edge 
-        '''
-        if self.prev_edge == None:
-            self.get_logger().info(f"there is no prev edge")
-            self.prev_edge = [0, 0.0, False, 0] # default is right
-
-        edges = self.possible_edges
-        if len(edges):
-            min_scan_ray = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
-            if min_scan_ray <= self.min_distance:
-                # if was left
-                if self.prev_edge[3] == True:
-                    self.override_steering = True
-                    self.vel_cmd.drive.steering_angle = -2.7
-                    self.get_logger().info(f"back.... left")
-                else:
-                    self.override_steering = True
-                    self.vel_cmd.drive.steering_angle = 2.7
-                    self.get_logger().info(f"back.... right")
-                linear_vel = -0.4
-                return linear_vel
-            else:
-                linear_vel = self.vel_cmd.drive.speed
-        else:
-            self.override_steering = False
-            linear_vel = self.vel_cmd.drive.speed
-
-        distance_x = self.dangerous_edges[0][1]
+        min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
         # the closest edge to the car
-        self.prev_edge = self.dangerous_edges[0]
+        distance_x = self.dangerous_edges[0][1]
+        
+        # if the car is very close that it cannot see any obstacles or the distance between it and the most dangerous edge is critical
+        if len(self.possible_edges) == 0 and min_scan_ray_dist < self.min_distance:            
+            return self.find_linear_vel_if_too_close()
+
+        # if there are edges and the car is too close from it
         if distance_x < self.min_distance:
-            return 0.0
+            return self.find_linear_vel_if_too_close()
 
         m = (self.max_vel - self.min_vel)/(self.max_distance - self.min_distance)
         c = self.max_vel - m*(self.max_distance)
@@ -204,12 +182,40 @@ class SteeringSpeedNode(Node):
         linear_vel = m*distance_x + c
         return linear_vel
 
+    def find_linear_vel_if_too_close(self)->float:
+        # if self.prev_edge == None:
+        #     self.get_logger().info(f"there is no prev edge")
+        #     self.prev_edge = [0, 0.0, False, 0] # default is right
+
+        # edges = self.possible_edges
+        # if len(edges):
+        #     min_scan_ray = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+        #     if min_scan_ray <= self.min_distance:
+        #         # if was left
+        #         if self.prev_edge[3] == True:
+        #             self.override_steering = True
+        #             self.vel_cmd.drive.steering_angle = -2.7
+        #             self.get_logger().info(f"back.... left")
+        #         else:
+        #             self.override_steering = True
+        #             self.vel_cmd.drive.steering_angle = 2.7
+        #             self.get_logger().info(f"{edges} {self.min_distance} back.... right")
+        #         linear_vel = -0.4
+        #         return linear_vel
+        #     else:
+        #         linear_vel = self.vel_cmd.drive.speed
+        # else:
+        #     self.override_steering = False
+        #     linear_vel = self.vel_cmd.drive.speed
+        return 0.0
+
     def filter_scan_cb(self, msg:LaserScan):
         self.scan_msg = msg
         smaller_angle = math.radians(-self.limit_angle)
         self.smaller_angle_index = int((smaller_angle - msg.angle_min)/msg.angle_increment)
         bigger_angle = math.radians(self.limit_angle)
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
+        # remember to extract first functions inside get_theta and put it here to be more clear and pass them to both functions 'theta and linear'
         self.theta = self.get_theta_target_5()
         self.linear_velocity = self.find_linear_vel()
 
