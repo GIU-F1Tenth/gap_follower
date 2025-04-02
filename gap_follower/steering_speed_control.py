@@ -48,8 +48,10 @@ class SteeringSpeedNode(Node):
         self.min_vel = self.min_vel_param.get_parameter_value().double_value
         self.max_vel_param = self.declare_parameter('max_vel', 5.0)
         self.max_vel = self.max_vel_param.get_parameter_value().double_value
-        self.linear_velocity = 0.0
         self.prev_edge = []
+        self.linear_vel = 1.0
+        self.prev_edge = None
+        self.override_steering = False
         # useless params #
         self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
         self.right_left_distance_thyresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
@@ -165,20 +167,30 @@ class SteeringSpeedNode(Node):
         '''
         it works based on the distance between the car and the closest edge 
         '''
-        self.get_logger().info(self.prev_edge)
-        linear_vel = 0.0
-        min_distance_from_scan_msg = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
-        if min_distance_from_scan_msg <= self.min_distance:
-            # if was left
-            if self.prev_edge and len(self.prev_edge) > 0:
+        if self.prev_edge == None:
+            self.get_logger().info(f"there is no prev edge")
+            self.prev_edge = [0, 0.0, False, 0] # default is right
+
+        edges = self.possible_edges
+        if len(edges):
+            min_scan_ray = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+            if min_scan_ray <= self.min_distance:
+                # if was left
                 if self.prev_edge[3] == True:
+                    self.override_steering = True
                     self.vel_cmd.drive.steering_angle = -2.7
-                    self.get_logger().info(f"back.... right")
-                else:
-                    self.vel_cmd.drive.steering_angle = 2.7
                     self.get_logger().info(f"back.... left")
+                else:
+                    self.override_steering = True
+                    self.vel_cmd.drive.steering_angle = 2.7
+                    self.get_logger().info(f"back.... right")
                 linear_vel = -0.4
                 return linear_vel
+            else:
+                linear_vel = self.vel_cmd.drive.speed
+        else:
+            self.override_steering = False
+            linear_vel = self.vel_cmd.drive.speed
 
         distance_x = self.dangerous_edges[0][1]
         # the closest edge to the car
@@ -209,7 +221,8 @@ class SteeringSpeedNode(Node):
         steering_angle = p_controller + d_controller
         self.prev_error = error
         self.steering_angle = math.radians(steering_angle)
-        self.vel_cmd.drive.steering_angle = self.steering_angle 
+        if not self.override_steering:
+            self.vel_cmd.drive.steering_angle = self.steering_angle 
         self.pub_vel_cmd.publish(self.vel_cmd)
         # self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
