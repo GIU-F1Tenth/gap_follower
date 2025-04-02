@@ -5,6 +5,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from ackermann_msgs.msg import AckermannDriveStamped
 from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Odometry
 import math
 from pynput import keyboard
 import copy
@@ -43,6 +44,7 @@ class SteeringSpeedNode(Node):
         self.steering_angle = 0.0
         self.prev_edge = None
         self.steering_override = False
+        self.cars_odom = Odometry()
         # useless params #
         self.close_rays_thresh_param = self.declare_parameter("close_rays_thresh", 170)
         self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
@@ -164,24 +166,29 @@ class SteeringSpeedNode(Node):
             self.get_logger().info(f"there is no prev edge")
             self.prev_edge = [0, 0.0, False, 0] # default is right
 
-        possible_edges = self.find_sorted_possible_edges(scan_msg=self.scan_msg)
-        if len(possible_edges) == 0:
+        # edges = self.find_sorted_possible_edges(scan_msg=self.scan_msg)
+        edges = self.possible_edges
+        if len(edges) == 0:
             min_scan_ray = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
             if min_scan_ray <= self.min_distance:
+                # # stop the car first
+                # while self.cars_odom.twist.twist.linear.x > 0.0:
+                #     self.get_logger().info(f"breaking !!! {self.cars_odom.twist.twist.linear.x}")
+                #     return 0.0
                 if self.prev_edge[3] == True:
                     self.steering_override = True
                     self.get_logger().info("turn left")
-                    self.steering_angle = 2.7
+                    self.steering_angle = -2.7
                 else:
                     self.steering_override = True
                     self.get_logger().info("turn right")
-                    self.steering_angle = -2.7
+                    self.steering_angle = 2.7
+
                 self.linear_vel = -0.3
             # don't accelerate if there the distance was greater IT WILL CRASHHH
         else:
             self.steering_override = False
-            self.get_logger().info("poss edges")
-            self.prev_edge = possible_edges[0]
+            self.prev_edge = edges[0]
             self.linear_vel = 2.0
 
     def get_theta_target_5(self):
@@ -223,7 +230,7 @@ class SteeringSpeedNode(Node):
             self.steering_angle = math.radians(steering_angle)
         self.vel_cmd.drive.steering_angle = self.steering_angle 
         self.pub_vel_cmd.publish(self.vel_cmd)
-        self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+        self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)} || {self.linear_vel}" )
 
 
 def main():
