@@ -49,11 +49,8 @@ class SteeringSpeedNode(Node):
         self.max_vel_param = self.declare_parameter('max_vel', 5.0)
         self.max_vel = self.max_vel_param.get_parameter_value().double_value
         self.linear_velocity = 0.0
+        self.prev_edge = []
         # useless params #
-        self.close_rays_thresh_param = self.declare_parameter("close_rays_thresh", 170)
-        self.close_rays_thresh = self.close_rays_thresh_param.get_parameter_value().integer_value
-        self.far_rays_thresh_param = self.declare_parameter("far_rays_thresh", 50)
-        self.far_rays_thresh = self.far_rays_thresh_param.get_parameter_value().integer_value
         self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
         self.right_left_distance_thyresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
         self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90.0)
@@ -68,11 +65,7 @@ class SteeringSpeedNode(Node):
         )
     
     def joy_callback(self, msg:Joy):
-        if msg.buttons[3] == 1:
-            self.vel_cmd.drive.speed = self.linear_velocity
-        elif msg.buttons[0] == 1:
-            self.vel_cmd.drive.speed = -self.linear_velocity
-        elif msg.buttons[4] == 1:
+        if msg.buttons[4] == 1:
             # just for testing
             self.vel_cmd.drive.speed = self.linear_velocity
         else:
@@ -169,11 +162,27 @@ class SteeringSpeedNode(Node):
         return self.find_theta_from_longest_ray(filtered_scan_msg)
  
     def find_linear_vel(self):
-        if len(self.dangerous_edges) == 0:
-            return 0.0
-        
-        distance_x = self.dangerous_edges[0][1]
+        '''
+        it works based on the distance between the car and the closest edge 
+        '''
+        self.get_logger().info(self.prev_edge)
+        linear_vel = 0.0
+        min_distance_from_scan_msg = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+        if min_distance_from_scan_msg <= self.min_distance:
+            # if was left
+            if self.prev_edge and len(self.prev_edge) > 0:
+                if self.prev_edge[3] == True:
+                    self.vel_cmd.drive.steering_angle = -2.7
+                    self.get_logger().info(f"back.... right")
+                else:
+                    self.vel_cmd.drive.steering_angle = 2.7
+                    self.get_logger().info(f"back.... left")
+                linear_vel = -0.4
+                return linear_vel
 
+        distance_x = self.dangerous_edges[0][1]
+        # the closest edge to the car
+        self.prev_edge = self.dangerous_edges[0]
         if distance_x < self.min_distance:
             return 0.0
 

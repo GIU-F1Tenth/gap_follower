@@ -8,13 +8,11 @@ gap_steering_node:
     kd: 1.1
     arc_length: 0.42
     obstacle_distance_thresh: 0.4
+    close_edges_thresh: 0.15
     min_distance: 0.3
     max_distance: 10.0
     min_vel: 0.5
-    max_vel: 6.0
+    max_vel: 5.0
     constant_speed: 2.5
-    close_edges_thresh: 0.15
     right_left_distance_thresh: 0.4
     right_left_sides_angle: 90.0
-    close_rays_thresh: 180
-    far_rays_thresh: 10
