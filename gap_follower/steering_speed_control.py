@@ -173,14 +173,13 @@ class SteeringSpeedNode(Node):
  
     def find_linear_vel(self):
         min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
-        max_scan_ray_dist = max(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
 
         if len(self.possible_edges) == 0:
         # if the car is very close that it cannot see any obstacles
             if min_scan_ray_dist < self.min_distance * 4:            
                 return self.find_linear_vel_if_too_close()
             else:
-                distance_x = max_scan_ray_dist
+                distance_x = min_scan_ray_dist
         else:
             # the distance is the distance of the closest edge
             distance_x = self.dangerous_edges[0][1]
