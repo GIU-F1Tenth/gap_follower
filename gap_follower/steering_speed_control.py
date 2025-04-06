@@ -211,16 +211,21 @@ class SteeringSpeedNode(Node):
                 self.override_steering = True          
                 return self.find_linear_vel_if_too_close()
             else:
-                angle_x = abs(self.steering_angle)
+                angle_x = abs(self.vel_cmd.drive.steering_angle)
         else:
-            # the distance is the distance of the closest edge
-            angle_x = abs(self.steering_angle)
+            # the angle is the current angle of the car
+            angle_x = abs(self.vel_cmd.drive.steering_angle)
         
         self.override_steering = False
-        m = (self.max_vel - self.min_vel)/(0.0 - math.radians(self.limit_angle))
+        m = (self.max_vel - self.min_vel)/(0.0 - 0.34)
         c = self.max_vel - m*(0.0)
             
         linear_vel = m*angle_x + c
+
+        if linear_vel < self.min_vel:
+            linear_vel = self.min_vel
+        elif linear_vel > self.max_vel:
+            linear_vel = self.max_vel
 
         return linear_vel
 
@@ -233,7 +238,6 @@ class SteeringSpeedNode(Node):
         # remember to extract first functions inside get_theta and put it here to be more clear and pass them to both functions 'theta and linear'
         self.theta = self.get_theta_target_5()
         self.linear_velocity = self.find_linear_vel_steering_controlled()
-        # self.linear_velocity = self.find_linear_vel()
 
     def follow_the_gap(self):
         ref_angle = 0.0
@@ -251,7 +255,7 @@ class SteeringSpeedNode(Node):
         else:
             self.vel_cmd.drive.speed = 0.0
         self.pub_vel_cmd.publish(self.vel_cmd)
-        self.get_logger().info(f"θ:{self.theta:.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || d_e: {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+        # self.get_logger().info(f"θ:{self.theta:.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || d_e: {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()

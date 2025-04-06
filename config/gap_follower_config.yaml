@@ -11,8 +11,8 @@ gap_steering_node:
     close_edges_thresh: 0.15
     min_distance: 0.6
     max_distance: 10.0
-    min_vel: 1.5
-    max_vel: 5.0
+    min_vel: 0.8
+    max_vel: 2.5
     constant_speed: 2.5
     right_left_distance_thresh: 0.4
     right_left_sides_angle: 90.0
