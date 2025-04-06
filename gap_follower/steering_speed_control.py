@@ -104,6 +104,9 @@ class SteeringSpeedNode(Node):
         return sorted_dangerous_edges
 
     def filter_scan(self, scan_msg:LaserScan, sorted_dangerous_edges:list):
+        if len(sorted_dangerous_edges) == 0:
+            return scan_msg
+            
         filtered_scan_msg = copy.deepcopy(scan_msg)
         # this is very important to filter the readings fromt the least significant edge to the most one
         # because we overwrite the least important dangerous edge by the important one.
@@ -147,13 +150,10 @@ class SteeringSpeedNode(Node):
         return theta
 
     def get_theta_target_5(self):
-        
         # find the possible edges
         possible_edges = self.find_sorted_possible_edges(scan_msg=self.scan_msg)
         self.possible_edges = possible_edges
-        if len(possible_edges) == 0:
-            return 0.0  
-        
+
         self.dangerous_edges = self.find_n_critical_edges(possible_edges, 2)
         # filter scan message
         filtered_scan_msg = self.filter_scan(self.scan_msg, self.dangerous_edges)
@@ -166,12 +166,14 @@ class SteeringSpeedNode(Node):
     def find_linear_vel(self):
         min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
         # the closest edge to the car
-        distance_x = self.dangerous_edges[0][1]
-        
-        # if the car is very close that it cannot see any obstacles or the distance between it and the most dangerous edge is critical
-        if len(self.possible_edges) == 0 and min_scan_ray_dist < self.min_distance:            
+        if len(self.dangerous_edges) == 0:
             return self.find_linear_vel_if_too_close()
 
+        # if the car is very close that it cannot see any obstacles or the distance between it and the most dangerous edge is critical
+        if len(self.possible_edges) == 0 and min_scan_ray_dist < self.min_distance*2:            
+            return self.find_linear_vel_if_too_close()
+            
+        distance_x = self.dangerous_edges[0][1]
         # if there are edges and the car is too close from it
         if distance_x < self.min_distance:
             return self.find_linear_vel_if_too_close()
@@ -230,7 +232,7 @@ class SteeringSpeedNode(Node):
         if not self.override_steering:
             self.vel_cmd.drive.steering_angle = self.steering_angle 
         self.pub_vel_cmd.publish(self.vel_cmd)
-        # self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+        self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()
