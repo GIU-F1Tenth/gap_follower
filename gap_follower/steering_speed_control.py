@@ -219,16 +219,21 @@ class SteeringSpeedNode(Node):
                 self.override_steering = True          
                 return self.find_linear_vel_if_too_close()
             else:
-                angle_x = abs(self.steering_angle)
+                angle_x = abs(self.vel_cmd.drive.steering_angle)
         else:
-            # the distance is the distance of the closest edge
-            angle_x = abs(self.steering_angle)
+            # the angle is the current angle of the car
+            angle_x = abs(self.vel_cmd.drive.steering_angle)
         
         self.override_steering = False
-        m = (self.max_vel - self.min_vel)/(0.0 - math.radians(self.limit_angle))
+        m = (self.max_vel - self.min_vel)/(0.0 - 0.34)
         c = self.max_vel - m*(0.0)
             
         linear_vel = m*angle_x + c
+        # cap linear velocity
+        if linear_vel < self.min_vel:
+            linear_vel = self.min_vel
+        elif linear_vel > self.max_vel:
+            linear_vel = self.max_vel
 
         return linear_vel
 
