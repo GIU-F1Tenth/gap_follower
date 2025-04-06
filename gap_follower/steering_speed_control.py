@@ -48,10 +48,10 @@ class SteeringSpeedNode(Node):
         self.min_vel = self.min_vel_param.get_parameter_value().double_value
         self.max_vel_param = self.declare_parameter('max_vel', 5.0)
         self.max_vel = self.max_vel_param.get_parameter_value().double_value
-        self.prev_edge = []
         self.linear_velocity = 0.0
         self.prev_edge = None
         self.override_steering = False
+        self.activate_autonomous_vel = False
         # useless params #
         self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
         self.right_left_distance_thyresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
@@ -68,11 +68,10 @@ class SteeringSpeedNode(Node):
     
     def joy_callback(self, msg:Joy):
         if msg.buttons[4] == 1:
-            # just for testing
-            self.vel_cmd.drive.speed = self.linear_velocity
+            # self.vel_cmd.drive.speed = self.linear_velocity
+            self.activate_autonomous_vel = True
         else:
-            self.vel_cmd.drive.speed = 1.0
-
+            self.activate_autonomous_vel = False
     
     def find_sorted_possible_edges(self, scan_msg: LaserScan):
         ranges = scan_msg.ranges
@@ -165,51 +164,42 @@ class SteeringSpeedNode(Node):
  
     def find_linear_vel(self):
         min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
-        # the closest edge to the car
-        if len(self.dangerous_edges) == 0:
-            return self.find_linear_vel_if_too_close()
 
-        # if the car is very close that it cannot see any obstacles or the distance between it and the most dangerous edge is critical
-        if len(self.possible_edges) == 0 and min_scan_ray_dist < self.min_distance*2:            
-            return self.find_linear_vel_if_too_close()
-            
-        distance_x = self.dangerous_edges[0][1]
-        # if there are edges and the car is too close from it
-        if distance_x < self.min_distance:
-            return self.find_linear_vel_if_too_close()
-
+        # if the car cannot see any obstacles
+        if len(self.possible_edges) == 0:
+            # if the car is very close
+            if min_scan_ray_dist < self.min_distance:  
+                self.override_steering = True          
+                return self.find_linear_vel_if_too_close()
+            else:
+                distance_x = min_scan_ray_dist
+        else:
+            # the distance is the distance of the closest edge
+            distance_x = self.dangerous_edges[0][1]
+        
+        self.override_steering = False
         m = (self.max_vel - self.min_vel)/(self.max_distance - self.min_distance)
         c = self.max_vel - m*(self.max_distance)
-        
+            
         linear_vel = m*distance_x + c
+
         return linear_vel
 
     def find_linear_vel_if_too_close(self)->float:
-        # if self.prev_edge == None:
-        #     self.get_logger().info(f"there is no prev edge")
-        #     self.prev_edge = [0, 0.0, False, 0] # default is right
+        if self.prev_edge == None:
+            self.get_logger().info(f"there is no prev edge")
+            self.prev_edge = [0, 0.0, False, 0] # default is right
 
-        # edges = self.possible_edges
-        # if len(edges):
-        #     min_scan_ray = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
-        #     if min_scan_ray <= self.min_distance:
-        #         # if was left
-        #         if self.prev_edge[3] == True:
-        #             self.override_steering = True
-        #             self.vel_cmd.drive.steering_angle = -2.7
-        #             self.get_logger().info(f"back.... left")
-        #         else:
-        #             self.override_steering = True
-        #             self.vel_cmd.drive.steering_angle = 2.7
-        #             self.get_logger().info(f"{edges} {self.min_distance} back.... right")
-        #         linear_vel = -0.4
-        #         return linear_vel
-        #     else:
-        #         linear_vel = self.vel_cmd.drive.speed
-        # else:
-        #     self.override_steering = False
-        #     linear_vel = self.vel_cmd.drive.speed
-        return 0.0
+        # if was left
+        if self.prev_edge[3] == True:
+            self.vel_cmd.drive.steering_angle = 2.7
+            self.get_logger().info(f"{self.min_distance} back.... left")
+        else:
+            self.vel_cmd.drive.steering_angle = -2.7
+            self.get_logger().info(f"{self.min_distance} back.... right")
+        
+        linear_vel = -0.4
+        return linear_vel
 
     def filter_scan_cb(self, msg:LaserScan):
         self.scan_msg = msg
@@ -231,8 +221,13 @@ class SteeringSpeedNode(Node):
         self.steering_angle = math.radians(steering_angle)
         if not self.override_steering:
             self.vel_cmd.drive.steering_angle = self.steering_angle 
+        
+        if self.activate_autonomous_vel:
+            self.vel_cmd.drive.speed = self.linear_velocity
+        else:
+            self.vel_cmd.drive.speed = 0.0
         self.pub_vel_cmd.publish(self.vel_cmd)
-        self.get_logger().info(f"theta:{self.theta:.2f} || edges: {len(self.possible_edges)} || {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+        self.get_logger().info(f"θ:{self.theta:.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || d_e: {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()
