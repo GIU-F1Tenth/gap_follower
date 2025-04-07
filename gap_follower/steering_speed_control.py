@@ -148,7 +148,7 @@ class SteeringSpeedNode(Node):
         
         return theta
 
-    def get_theta_target_5(self):
+    def get_theta_target_5(self): # gets the theta in degrees
         # find the possible edges
         possible_edges = self.find_sorted_possible_edges(scan_msg=self.scan_msg)
         self.possible_edges = possible_edges
@@ -237,8 +237,8 @@ class SteeringSpeedNode(Node):
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
         # remember to extract first functions inside get_theta and put it here to be more clear and pass them to both functions 'theta and linear'
         self.theta = self.get_theta_target_5()
-        self.linear_velocity = self.find_linear_vel_steering_controlled()
         # self.linear_velocity = self.find_linear_vel()
+        self.linear_velocity = self.find_linear_vel_steering_controlled()
 
     def follow_the_gap(self):
         ref_angle = 0.0
