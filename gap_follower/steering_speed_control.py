@@ -256,7 +256,7 @@ class SteeringSpeedNode(Node):
         else:
             self.vel_cmd.drive.speed = 0.0
         self.pub_vel_cmd.publish(self.vel_cmd)
-        self.get_logger().info(f"θ:{self.theta:.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || d_e: {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+        # self.get_logger().info(f"θ:{self.theta:.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || d_e: {self.dangerous_edges} || {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()
