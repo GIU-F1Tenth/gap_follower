@@ -237,6 +237,31 @@ class SteeringSpeedNode(Node):
 
         return linear_vel
 
+    def find_linear_vel_steering_controlled_rationally(self):
+        min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+
+        # If no edges are detected
+        if len(self.possible_edges) == 0:
+            if min_scan_ray_dist < self.min_distance:  
+                self.override_steering = True          
+                return self.find_linear_vel_if_too_close()
+            else:
+                angle_x = abs(self.theta)
+        else:
+            angle_x = abs(self.theta)
+
+        self.override_steering = False
+
+        # Improved rational model
+        k = 5.0  # Tuning parameter (try 5–10)
+        linear_vel = self.min_vel + (self.max_vel - self.min_vel) / (1 + k * math.radians(angle_x))
+
+        # Clamp to ensure safety
+        linear_vel = max(self.min_vel, min(self.max_vel, linear_vel))
+
+        return linear_vel
+
+
     def filter_scan_cb(self, msg:LaserScan):
         self.scan_msg = msg
         smaller_angle = math.radians(-self.limit_angle)
@@ -246,7 +271,7 @@ class SteeringSpeedNode(Node):
         # remember to extract first functions inside get_theta and put it here to be more clear and pass them to both functions 'theta and linear'
         self.theta = self.get_theta_target_5()
         # self.linear_velocity = self.find_linear_vel()
-        self.linear_velocity = self.find_linear_vel_steering_controlled()
+        self.linear_velocity = self.find_linear_vel_steering_controlled_rationally()
 
     def follow_the_gap(self):
         ref_angle = 0.0
