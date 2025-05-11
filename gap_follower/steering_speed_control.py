@@ -9,7 +9,7 @@ from sensor_msgs.msg import Joy
 import math
 import copy
 from pynput import keyboard
-
+import numpy as np
 class SteeringSpeedNode(Node):
     def __init__(self):
         super().__init__("gap_steering_node")
@@ -261,6 +261,36 @@ class SteeringSpeedNode(Node):
 
         return linear_vel
 
+    def compute_c_sigmoid(self, v_min, v_max, k):
+        # Ensures velocity is ~99.9% of v_max at theta = 0
+        return -1 * (1 / k) * np.log((v_max - v_max * 0.999) / (v_max * 0.999 - v_min))
+
+    def find_linear_vel_steering_controlled_sigmoidally(self):
+        min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+
+        if len(self.possible_edges) == 0:
+            if min_scan_ray_dist < self.min_distance:  
+                self.override_steering = True          
+                return self.find_linear_vel_if_too_close()
+            else:
+                angle_x = abs(self.theta)
+        else:
+            angle_x = abs(self.theta)
+
+        self.override_steering = False
+
+        # Sigmoid parameters
+        k = 8.0  # Controls steepness
+        c = self.compute_c_sigmoid(self.min_vel, self.max_vel, k)  # Center of sigmoid
+
+        # Sigmoid velocity model
+        vel = self.min_vel + (self.max_vel - self.min_vel) / (1 + np.exp(k * (math.radians(angle_x) - c)))
+
+        # Clamp to [min_vel, max_vel]
+        vel = max(self.min_vel, min(self.max_vel, vel))
+
+        return vel
+
 
     def filter_scan_cb(self, msg:LaserScan):
         self.scan_msg = msg
@@ -271,7 +301,7 @@ class SteeringSpeedNode(Node):
         # remember to extract first functions inside get_theta and put it here to be more clear and pass them to both functions 'theta and linear'
         self.theta = self.get_theta_target_5()
         # self.linear_velocity = self.find_linear_vel()
-        self.linear_velocity = self.find_linear_vel_steering_controlled_rationally()
+        self.linear_velocity = self.find_linear_vel_steering_controlled_sigmoidally()
 
     def follow_the_gap(self):
         ref_angle = 0.0
