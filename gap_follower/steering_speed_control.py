@@ -26,6 +26,8 @@ class SteeringSpeedNode(Node):
         self.scan_msg = LaserScan()
         self.filtered_scan_msg = LaserScan()
         self.vel_cmd = AckermannDriveStamped()
+        self.number_of_critical_edges_param = self.declare_parameter("number_of_critical_edges", 2)
+        self.number_of_critical_edges = self.number_of_critical_edges_param.get_parameter_value().integer_value
         self.obs_thresh_param = self.declare_parameter("obstacle_distance_thresh", 0.8)
         self.obs_thresh = self.obs_thresh_param.get_parameter_value().double_value     
         self.theta = 0.0 
@@ -36,8 +38,6 @@ class SteeringSpeedNode(Node):
         self.kd_param = self.declare_parameter("kd", 1.0)
         self.kd = self.kp_param.get_parameter_value().double_value
         self.prev_error = 0.0
-        self.constant_speed_param = self.declare_parameter('constant_speed', 1.0)
-        self.constant_speed = self.constant_speed_param.get_parameter_value().double_value
         self.dangerous_edges = []
         self.arc_length_param = self.declare_parameter('arc_length', 0.4)
         self.arc_length = self.arc_length_param.get_parameter_value().double_value
@@ -53,12 +53,6 @@ class SteeringSpeedNode(Node):
         self.prev_edge = None
         self.override_steering = False
         self.activate_autonomous_vel = False
-        # useless params #
-        self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
-        self.right_left_distance_thyresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
-        self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90.0)
-        self.close_edges_thresh_param = self.declare_parameter("close_edges_thresh", 0.15)
-        self.close_edges_thresh = self.close_edges_thresh_param.get_parameter_value().double_value
 
         listener = keyboard.Listener(
             on_press=self.on_press,
@@ -161,7 +155,7 @@ class SteeringSpeedNode(Node):
         possible_edges = self.find_sorted_possible_edges(scan_msg=self.scan_msg)
         self.possible_edges = possible_edges
 
-        self.dangerous_edges = self.find_n_critical_edges(possible_edges, 2)
+        self.dangerous_edges = self.find_n_critical_edges(possible_edges, self.number_of_critical_edges)
         # filter scan message
         filtered_scan_msg = self.filter_scan(self.scan_msg, self.dangerous_edges)
         
@@ -319,7 +313,7 @@ class SteeringSpeedNode(Node):
         else:
             self.vel_cmd.drive.speed = 0.0
         self.pub_vel_cmd.publish(self.vel_cmd)
-        self.get_logger().info(f"θ:{math.radians(self.theta):.2f} || {math.radians(self.limit_angle):.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || d_e: {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+        self.get_logger().info(f"θ:{math.radians(self.theta):.2f} || {math.radians(self.limit_angle):.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || de: {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()
