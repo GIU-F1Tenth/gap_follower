@@ -8,7 +8,7 @@ from sensor_msgs.msg import LaserScan
 from sensor_msgs.msg import Joy
 import math
 import copy
-
+import numpy as np
 class SteeringSpeedNode(Node):
     def __init__(self):
         super().__init__("gap_steering_joy_node")
@@ -25,6 +25,8 @@ class SteeringSpeedNode(Node):
         self.scan_msg = LaserScan()
         self.filtered_scan_msg = LaserScan()
         self.vel_cmd = AckermannDriveStamped()
+        self.number_of_critical_edges_param = self.declare_parameter("number_of_critical_edges", 2)
+        self.number_of_critical_edges = self.number_of_critical_edges_param.get_parameter_value().integer_value
         self.obs_thresh_param = self.declare_parameter("obstacle_distance_thresh", 0.8)
         self.obs_thresh = self.obs_thresh_param.get_parameter_value().double_value     
         self.theta = 0.0 
@@ -35,8 +37,6 @@ class SteeringSpeedNode(Node):
         self.kd_param = self.declare_parameter("kd", 1.0)
         self.kd = self.kp_param.get_parameter_value().double_value
         self.prev_error = 0.0
-        self.constant_speed_param = self.declare_parameter('constant_speed', 1.0)
-        self.constant_speed = self.constant_speed_param.get_parameter_value().double_value
         self.dangerous_edges = []
         self.arc_length_param = self.declare_parameter('arc_length', 0.4)
         self.arc_length = self.arc_length_param.get_parameter_value().double_value
@@ -52,12 +52,6 @@ class SteeringSpeedNode(Node):
         self.prev_edge = None
         self.override_steering = False
         self.activate_autonomous_vel = False
-        # useless params #
-        self.right_left_distance_thresh_param = self.declare_parameter('right_left_distance_thresh', 0.2)
-        self.right_left_distance_thyresh = self.right_left_distance_thresh_param.get_parameter_value().double_value
-        self.right_left_sides_angle_param = self.declare_parameter('right_left_sides_angle', 90.0)
-        self.close_edges_thresh_param = self.declare_parameter("close_edges_thresh", 0.15)
-        self.close_edges_thresh = self.close_edges_thresh_param.get_parameter_value().double_value
 
         self.subscription = self.create_subscription(
             Joy,
@@ -153,7 +147,7 @@ class SteeringSpeedNode(Node):
         possible_edges = self.find_sorted_possible_edges(scan_msg=self.scan_msg)
         self.possible_edges = possible_edges
 
-        self.dangerous_edges = self.find_n_critical_edges(possible_edges, 2)
+        self.dangerous_edges = self.find_n_critical_edges(possible_edges, self.number_of_critical_edges)
         # filter scan message
         filtered_scan_msg = self.filter_scan(self.scan_msg, self.dangerous_edges)
         
@@ -229,6 +223,89 @@ class SteeringSpeedNode(Node):
 
         return linear_vel
 
+    def find_linear_vel_steering_controlled(self):
+        min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+
+        # if the car cannot see any obstacles
+        if len(self.possible_edges) == 0:
+            # if the car is very close
+            if min_scan_ray_dist < self.min_distance:  
+                self.override_steering = True          
+                return self.find_linear_vel_if_too_close()
+            else:
+                angle_x = abs(self.theta)
+        else:
+            # the angle is the current angle of the car
+            angle_x = abs(self.theta)
+        
+        self.override_steering = False
+        m = (self.max_vel - self.min_vel)/(0.0 - self.limit_angle)
+        c = self.max_vel - m*(0.0)
+            
+        linear_vel = m*angle_x + c
+        # cap linear velocity
+        if linear_vel < self.min_vel:
+            linear_vel = self.min_vel
+        elif linear_vel > self.max_vel:
+            linear_vel = self.max_vel
+
+        return linear_vel
+
+    def find_linear_vel_steering_controlled_rationally(self):
+        min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+
+        # If no edges are detected
+        if len(self.possible_edges) == 0:
+            if min_scan_ray_dist < self.min_distance:  
+                self.override_steering = True          
+                return self.find_linear_vel_if_too_close()
+            else:
+                angle_x = abs(self.theta)
+        else:
+            angle_x = abs(self.theta)
+
+        self.override_steering = False
+
+        # Improved rational model
+        k = 5.0  # Tuning parameter (try 5–10)
+        linear_vel = self.min_vel + (self.max_vel - self.min_vel) / (1 + k * math.radians(angle_x))
+
+        # Clamp to ensure safety
+        linear_vel = max(self.min_vel, min(self.max_vel, linear_vel))
+
+        return linear_vel
+
+    def compute_c_sigmoid(self, v_min, v_max, k):
+        # Ensures velocity is ~99.9% of v_max at theta = 0
+        return -1 * (1 / k) * np.log((v_max - v_max * 0.999) / (v_max * 0.999 - v_min))
+
+    def find_linear_vel_steering_controlled_sigmoidally(self):
+        min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+
+        if len(self.possible_edges) == 0:
+            if min_scan_ray_dist < self.min_distance:  
+                self.override_steering = True          
+                return self.find_linear_vel_if_too_close()
+            else:
+                angle_x = abs(self.theta)
+        else:
+            angle_x = abs(self.theta)
+
+        self.override_steering = False
+
+        # Sigmoid parameters
+        k = 8.0  # Controls steepness
+        c = self.compute_c_sigmoid(self.min_vel, self.max_vel, k)  # Center of sigmoid
+
+        # Sigmoid velocity model
+        vel = self.min_vel + (self.max_vel - self.min_vel) / (1 + np.exp(k * (math.radians(angle_x) - c)))
+
+        # Clamp to [min_vel, max_vel]
+        vel = max(self.min_vel, min(self.max_vel, vel))
+
+        return vel
+
+
     def filter_scan_cb(self, msg:LaserScan):
         self.scan_msg = msg
         smaller_angle = math.radians(-self.limit_angle)
@@ -238,7 +315,8 @@ class SteeringSpeedNode(Node):
         # remember to extract first functions inside get_theta and put it here to be more clear and pass them to both functions 'theta and linear'
         self.theta = self.get_theta_target_5()
         # self.linear_velocity = self.find_linear_vel()
-        self.linear_velocity = self.find_linear_vel_steering_controlled()
+        # self.linear_velocity = self.find_linear_vel()
+        self.linear_velocity = self.find_linear_vel_steering_controlled_sigmoidally()
 
     def follow_the_gap(self):
         ref_angle = 0.0
@@ -256,7 +334,7 @@ class SteeringSpeedNode(Node):
         else:
             self.vel_cmd.drive.speed = 0.0
         self.pub_vel_cmd.publish(self.vel_cmd)
-        # self.get_logger().info(f"θ:{self.theta:.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || d_e: {self.dangerous_edges} || {len(self.dangerous_edges)}" )
+        # self.get_logger().info(f"θ:{math.radians(self.theta):.2f} || {math.radians(self.limit_angle):.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || de: {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()
