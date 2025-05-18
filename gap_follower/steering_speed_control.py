@@ -129,7 +129,7 @@ class SteeringSpeedNode(Node):
             for i in range(from_index, to_index):
                 var_index = (i + curr_edge[0])
                 if 0 <= var_index < len(filtered_scan_msg.ranges):
-                    filtered_scan_msg.ranges[var_index] = curr_edge[1]
+                    filtered_scan_msg.ranges[var_index] = min(curr_edge[1], scan_msg.ranges[var_index]) # set current filtered distance to the minimum ray distance
 
         return filtered_scan_msg
 
