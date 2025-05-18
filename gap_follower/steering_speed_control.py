@@ -48,6 +48,8 @@ class SteeringSpeedNode(Node):
         self.min_vel = self.min_vel_param.get_parameter_value().double_value
         self.max_vel_param = self.declare_parameter('max_vel', 5.0)
         self.max_vel = self.max_vel_param.get_parameter_value().double_value
+        self.k_sigmoid_param = self.declare_parameter('k_sigmoid', 8.0)
+        self.k_sigmoid = self.k_sigmoid_param.get_parameter_value().double_value
         self.linear_velocity = 0.0
         self.prev_edge = None
         self.override_steering = False
@@ -121,7 +123,7 @@ class SteeringSpeedNode(Node):
             for i in range(from_index, to_index):
                 var_index = (i + curr_edge[0])
                 if 0 <= var_index < len(filtered_scan_msg.ranges):
-                    filtered_scan_msg.ranges[var_index] = curr_edge[1]
+                    filtered_scan_msg.ranges[var_index] = min(curr_edge[1], scan_msg.ranges[var_index]) # set current filtered distance to the minimum ray distance
 
         return filtered_scan_msg
 
@@ -266,7 +268,7 @@ class SteeringSpeedNode(Node):
         self.override_steering = False
 
         # Sigmoid parameters
-        k = 8.0  # Controls steepness
+        k = self.k_sigmoid  # Controls steepness
         c = self.compute_c_sigmoid(self.min_vel, self.max_vel, k)  # Center of sigmoid
 
         # Sigmoid velocity model
@@ -286,7 +288,6 @@ class SteeringSpeedNode(Node):
         self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
         # remember to extract first functions inside get_theta and put it here to be more clear and pass them to both functions 'theta and linear'
         self.theta = self.get_theta_target_5()
-        # self.linear_velocity = self.find_linear_vel()
         # self.linear_velocity = self.find_linear_vel()
         self.linear_velocity = self.find_linear_vel_steering_controlled_sigmoidally()
 
