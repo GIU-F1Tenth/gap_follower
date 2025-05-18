@@ -6,6 +6,7 @@ gap_steering_node:
     limit_angle: 70.0
     kp: 0.51
     kd: 1.1
+    k_sigmoid: 8.0
     arc_length: 0.42
     number_of_critical_edges: 3
     obstacle_distance_thresh: 0.3

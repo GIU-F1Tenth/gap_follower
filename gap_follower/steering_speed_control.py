@@ -49,6 +49,8 @@ class SteeringSpeedNode(Node):
         self.min_vel = self.min_vel_param.get_parameter_value().double_value
         self.max_vel_param = self.declare_parameter('max_vel', 5.0)
         self.max_vel = self.max_vel_param.get_parameter_value().double_value
+        self.k_sigmoid_param = self.declare_parameter('k_sigmoid', 8.0)
+        self.k_sigmoid = self.k_sigmoid_param.get_parameter_value().double_value
         self.linear_velocity = 0.0
         self.prev_edge = None
         self.override_steering = False
@@ -274,7 +276,7 @@ class SteeringSpeedNode(Node):
         self.override_steering = False
 
         # Sigmoid parameters
-        k = 8.0  # Controls steepness
+        k = self.k_sigmoid  # Controls steepness
         c = self.compute_c_sigmoid(self.min_vel, self.max_vel, k)  # Center of sigmoid
 
         # Sigmoid velocity model
