@@ -7,11 +7,11 @@ gap_steering_node:
     kp: 0.51
     kd: 1.1
     k_sigmoid: 8.0
-    arc_length: 0.42
+    arc_length: 0.45
     number_of_critical_edges: 3
     obstacle_distance_thresh: 0.4
     min_distance: 0.6
     max_distance: 10.0
-    min_vel: 1.7
-    max_vel: 2.7
+    min_vel: 0.6
+    max_vel: 1.5
 

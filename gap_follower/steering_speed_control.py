@@ -9,6 +9,8 @@ from sensor_msgs.msg import Joy
 import math
 import copy
 import numpy as np
+from std_msgs.msg import Bool
+
 class SteeringSpeedNode(Node):
     def __init__(self):
         super().__init__("gap_steering_joy_node")
@@ -17,7 +19,7 @@ class SteeringSpeedNode(Node):
         self.sub_scan = self.create_subscription(LaserScan, self.scan_param.get_parameter_value().string_value, self.filter_scan_cb, 10)
         self.filtered_scan_param = self.declare_parameter("filtered_scan_topic", "/filtered_scan")
         self.filtered_laser_scan_pub = self.create_publisher(LaserScan, self.filtered_scan_param.get_parameter_value().string_value, 10)
-        self.drive_param = self.declare_parameter("drive_topic", "/drive")
+        self.drive_param = self.declare_parameter("drive_topic", "/tmp/ackermann_cmd")
         self.pub_vel_cmd = self.create_publisher(AckermannDriveStamped, self.drive_param.get_parameter_value().string_value, 10)
         self.tmr = self.create_timer(0.0001, self.follow_the_gap)
         self.limit_angle_param = self.declare_parameter("limit_angle", 70.0)
@@ -54,14 +56,19 @@ class SteeringSpeedNode(Node):
         self.prev_edge = None
         self.override_steering = False
         self.activate_autonomous_vel = False
-
+        self.is_active = False
+        
+        self.gap_follower_toggle_sub = self.create_subscription(Bool, "/gap_follower_toggle", self.toggle_algo_cb, 10)
         self.subscription = self.create_subscription(
             Joy,
             'joy',
             self.joy_callback,
             10
         )
-    
+        
+    def toggle_algo_cb(self, msg:Bool):
+        self.is_active = msg.data
+        
     def joy_callback(self, msg:Joy):
         if msg.buttons[4] == 1:
             # self.vel_cmd.drive.speed = self.linear_velocity
@@ -302,11 +309,9 @@ class SteeringSpeedNode(Node):
         if not self.override_steering:
             self.vel_cmd.drive.steering_angle = self.steering_angle 
         
-        if self.activate_autonomous_vel:
+        if self.activate_autonomous_vel and self.is_active:
             self.vel_cmd.drive.speed = self.linear_velocity
-        else:
-            self.vel_cmd.drive.speed = 0.0
-        self.pub_vel_cmd.publish(self.vel_cmd)
+            self.pub_vel_cmd.publish(self.vel_cmd)
         # self.get_logger().info(f"θ:{math.radians(self.theta):.2f} || {math.radians(self.limit_angle):.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || de: {len(self.dangerous_edges)}" )
 
 def main():
