@@ -3,15 +3,15 @@ gap_steering_node:
     scan_topic: "/scan"
     drive_topic: "/ackermann_cmd"
     filtered_scan_topic: "/filtered_scan"
-    limit_angle: 70.0
+    limit_angle: 85.0
     kp: 0.51
-    kd: 1.1
+    kd: 1.15
     k_sigmoid: 8.0
-    arc_length: 0.45
+    arc_length: 0.48
     number_of_critical_edges: 3
     obstacle_distance_thresh: 0.4
-    min_distance: 0.6
+    min_distance: 0.5
     max_distance: 10.0
-    min_vel: 0.6
-    max_vel: 1.5
+    min_vel: 1.5
+    max_vel: 3.5
 

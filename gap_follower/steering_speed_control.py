@@ -56,7 +56,7 @@ class SteeringSpeedNode(Node):
         self.prev_edge = None
         self.override_steering = False
         self.activate_autonomous_vel = False
-        self.is_active = False
+        self.is_active = True
         
         self.gap_follower_toggle_sub = self.create_subscription(Bool, "/gap_follower_toggle", self.toggle_algo_cb, 10)
         self.subscription = self.create_subscription(
