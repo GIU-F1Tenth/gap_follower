@@ -56,8 +56,10 @@ class SteeringSpeedNode(Node):
         self.prev_edge = None
         self.override_steering = False
         self.activate_autonomous_vel = False
-        self.is_active = True
-        
+        self.is_active = True   
+        self.stop = False 
+    
+        self.pause_sub = self.create_subscription(Bool, "/pause", self.toggle_stop, 10)    
         self.gap_follower_toggle_sub = self.create_subscription(Bool, "/gap_follower_toggle", self.toggle_algo_cb, 10)
         self.subscription = self.create_subscription(
             Joy,
@@ -65,6 +67,15 @@ class SteeringSpeedNode(Node):
             self.joy_callback,
             10
         )
+        
+    def toggle_stop(self, msg:Bool):
+        self.stop = msg.data
+        if self.stop:
+            self.get_logger().info("Stopping the car")
+            self.stop = True
+        else:
+            self.get_logger().info("Resuming the car")
+            self.stop = False
         
     def toggle_algo_cb(self, msg:Bool):
         self.is_active = msg.data
@@ -309,7 +320,7 @@ class SteeringSpeedNode(Node):
         if not self.override_steering:
             self.vel_cmd.drive.steering_angle = self.steering_angle 
         
-        if self.activate_autonomous_vel and self.is_active:
+        if self.activate_autonomous_vel and self.is_active and not self.stop:
             self.vel_cmd.drive.speed = self.linear_velocity
             self.pub_vel_cmd.publish(self.vel_cmd)
         # self.get_logger().info(f"θ:{math.radians(self.theta):.2f} || {math.radians(self.limit_angle):.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || de: {len(self.dangerous_edges)}" )
