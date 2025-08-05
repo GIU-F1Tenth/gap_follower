@@ -5,20 +5,21 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from ackermann_msgs.msg import AckermannDriveStamped
 from sensor_msgs.msg import LaserScan
-from sensor_msgs.msg import Joy
+from pynput import keyboard
 import math
 import copy
-from pynput import keyboard
 import numpy as np
+from std_msgs.msg import Bool
+
 class SteeringSpeedNode(Node):
     def __init__(self):
-        super().__init__("gap_steering_node")
+        super().__init__("gap_steering_joy_node")
         self.get_logger().info("the steering node has started")
         self.scan_param = self.declare_parameter("scan_topic", "/scan")
         self.sub_scan = self.create_subscription(LaserScan, self.scan_param.get_parameter_value().string_value, self.filter_scan_cb, 10)
         self.filtered_scan_param = self.declare_parameter("filtered_scan_topic", "/filtered_scan")
         self.filtered_laser_scan_pub = self.create_publisher(LaserScan, self.filtered_scan_param.get_parameter_value().string_value, 10)
-        self.drive_param = self.declare_parameter("drive_topic", "/drive")
+        self.drive_param = self.declare_parameter("drive_topic", "/tmp/ackermann_cmd")
         self.pub_vel_cmd = self.create_publisher(AckermannDriveStamped, self.drive_param.get_parameter_value().string_value, 10)
         self.tmr = self.create_timer(0.0001, self.follow_the_gap)
         self.limit_angle_param = self.declare_parameter("limit_angle", 70.0)
@@ -36,7 +37,7 @@ class SteeringSpeedNode(Node):
         self.kp_param = self.declare_parameter("kp", 1.0)
         self.kp = self.kp_param.get_parameter_value().double_value
         self.kd_param = self.declare_parameter("kd", 1.0)
-        self.kd = self.kp_param.get_parameter_value().double_value
+        self.kd = self.kd_param.get_parameter_value().double_value
         self.prev_error = 0.0
         self.dangerous_edges = []
         self.arc_length_param = self.declare_parameter('arc_length', 0.4)
@@ -55,28 +56,73 @@ class SteeringSpeedNode(Node):
         self.prev_edge = None
         self.override_steering = False
         self.activate_autonomous_vel = False
-
+        self.is_active = True   
+        self.stop = False 
+    
+        self.pause_sub = self.create_subscription(Bool, "/pause", self.toggle_stop, 10)    
+        self.gap_follower_toggle_sub = self.create_subscription(Bool, "/gap_follower_toggle", self.toggle_algo_cb, 10)
         listener = keyboard.Listener(
             on_press=self.on_press,
             on_release=self.on_release
         )
         listener.start()
-
+        
     def on_press(self, key):
+        """
+        Handle key press events for controlling the pure pursuit parameters.
+        This allows dynamic adjustment of controller parameters during runtime.
+        Args:
+            key (Key): The key that was pressed
+            - d : Increase kd by 0.1
+            - x : Decrease kd by 0.1  
+            - b : Increase kp by 0.1
+            - z : Decrease kp by 0.1
+            - a : Enable autonomous velocity control
+        """
         try:
             if key.char == 'a':
                 self.activate_autonomous_vel = True 
+            if key.char == 'd':
+                self.kd += 0.1
+                self.get_logger().info(f"kd increased to {self.kd:.2f}")
+            if key.char == 'x':
+                self.kd -= 0.1
+                self.get_logger().info(f"kd decreased to {self.kd:.2f}")
+            if key.char == 'b':
+                self.kp += 0.1
+                self.get_logger().info(f"kp increased to {self.kp:.2f}")
+            if key.char == 'z':
+                self.kp -= 0.1
+                self.get_logger().info(f"kp decreased to {self.kp:.2f}")
         except AttributeError:
             self.get_logger().warn("error while sending.. :(")
 
     def on_release(self, key):
+        """
+        Handle key release events to stop the robot or deactivate autonomous velocity control.
+        Args:
+            key (Key): The key that was released
+            - a (button 4): Disable autonomous velocity control
+            - esc: Stop the listener and exit
+        """
         # Stop the robot when the key is released
-        # self.start_algorithm = False
         self.activate_autonomous_vel = False
         if key == keyboard.Key.esc:
             # Stop listener
             return False
-    
+
+    def toggle_stop(self, msg:Bool):
+        self.stop = msg.data
+        if self.stop:
+            self.get_logger().info("Stopping the car")
+            self.stop = True
+        else:
+            self.get_logger().info("Resuming the car")
+            self.stop = False
+        
+    def toggle_algo_cb(self, msg:Bool):
+        self.is_active = msg.data
+        
     def find_sorted_possible_edges(self, scan_msg: LaserScan):
         ranges = scan_msg.ranges
         possible_edges = []
@@ -196,10 +242,10 @@ class SteeringSpeedNode(Node):
 
         # if was left
         if self.prev_edge[3] == True:
-            self.vel_cmd.drive.steering_angle = 2.7
+            self.vel_cmd.drive.steering_angle = -2.7
             self.get_logger().info(f"{self.min_distance} back.... left")
         else:
-            self.vel_cmd.drive.steering_angle = -2.7
+            self.vel_cmd.drive.steering_angle = 2.7
             self.get_logger().info(f"{self.min_distance} back.... right")
         
         linear_vel = -0.4
@@ -310,12 +356,10 @@ class SteeringSpeedNode(Node):
         if not self.override_steering:
             self.vel_cmd.drive.steering_angle = self.steering_angle 
         
-        if self.activate_autonomous_vel:
+        if self.activate_autonomous_vel and self.is_active and not self.stop:
             self.vel_cmd.drive.speed = self.linear_velocity
-        else:
-            self.vel_cmd.drive.speed = 0.0
-        self.pub_vel_cmd.publish(self.vel_cmd)
-        self.get_logger().info(f"θ:{math.radians(self.theta):.2f} || {math.radians(self.limit_angle):.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || de: {len(self.dangerous_edges)}" )
+            self.pub_vel_cmd.publish(self.vel_cmd)
+        # self.get_logger().info(f"θ:{math.radians(self.theta):.2f} || {math.radians(self.limit_angle):.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || de: {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()

@@ -3,15 +3,14 @@ gap_steering_node:
     scan_topic: "/scan"
     drive_topic: "/drive"
     filtered_scan_topic: "/filtered_scan"
-    limit_angle: 70.0
+    limit_angle: 85.0
     kp: 0.51
-    kd: 1.1
-    k_sigmoid: 8.0
-    arc_length: 0.42
-    number_of_critical_edges: 3
-    obstacle_distance_thresh: 0.3
-    min_distance: 0.8
+    kd: 1.15
+    k_sigmoid: 20.0
+    arc_length: 0.45
+    number_of_critical_edges: 4
+    obstacle_distance_thresh: 0.4
+    min_distance: 0.5
     max_distance: 10.0
-    min_vel: 0.3
+    min_vel: 1.6
     max_vel: 4.0
-
