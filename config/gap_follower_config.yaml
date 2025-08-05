@@ -13,4 +13,4 @@ gap_steering_node:
     min_distance: 0.5
     max_distance: 10.0
     min_vel: 1.6
-    max_vel: 4.0
+    max_vel: 9.0

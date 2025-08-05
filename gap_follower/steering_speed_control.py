@@ -107,6 +107,9 @@ class SteeringSpeedNode(Node):
         """
         # Stop the robot when the key is released
         self.activate_autonomous_vel = False
+        self.vel_cmd.drive.speed = 0.0
+        self.get_logger().info("Stopping the car")
+        self.pub_vel_cmd.publish(self.vel_cmd)
         if key == keyboard.Key.esc:
             # Stop listener
             return False
@@ -359,7 +362,7 @@ class SteeringSpeedNode(Node):
         if self.activate_autonomous_vel and self.is_active and not self.stop:
             self.vel_cmd.drive.speed = self.linear_velocity
             self.pub_vel_cmd.publish(self.vel_cmd)
-        # self.get_logger().info(f"θ:{math.radians(self.theta):.2f} || {math.radians(self.limit_angle):.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || de: {len(self.dangerous_edges)}" )
+            self.get_logger().info(f"θ:{math.radians(self.theta):.2f} || {math.radians(self.limit_angle):.2f} || v: {self.linear_velocity:.2f} || e: {len(self.possible_edges)} || de: {len(self.dangerous_edges)}" )
 
 def main():
     rclpy.init()
