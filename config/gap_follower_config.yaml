@@ -4,14 +4,14 @@ gap_steering_node:
     drive_topic: "/drive"
     filtered_scan_topic: "/filtered_scan"
     limit_angle: 85.0
-    kp: 0.51
-    kd: 1.15
-    k_sigmoid_steering: 20.0
-    k_sigmoid_linear_vel: 0.5
-    arc_length: 0.45
+    kp: 0.41
+    kd: 1.55
+    k_sigmoid_steering: 10.0 # increase this value to get steeper curve
+    k_sigmoid_linear_vel: 0.3 # increase this value to get steeper curve 
+    arc_length: 0.225 # Half car's width
     number_of_critical_edges: 4
-    obstacle_distance_thresh: 0.4
-    min_distance: 0.5
+    obstacle_distance_thresh: 0.5
+    min_distance: 0.4
     max_distance: 10.0
     min_vel: 1.6
-    max_vel: 9.0
+    max_vel: 7.0
