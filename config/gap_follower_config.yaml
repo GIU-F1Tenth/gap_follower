@@ -1,7 +1,7 @@
 gap_steering_node:
   ros__parameters:
     scan_topic: "/scan"
-    drive_topic: "/drive"
+    drive_topic: "/cmd_vel"
     filtered_scan_topic: "/filtered_scan"
     limit_angle: 85.0
     kp: 0.41
@@ -13,5 +13,5 @@ gap_steering_node:
     obstacle_distance_thresh: 0.5
     min_distance: 0.4
     max_distance: 10.0
-    min_vel: 1.6
-    max_vel: 7.0
+    min_vel: 0.05
+    max_vel: 1.5

@@ -1,46 +1,34 @@
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
 from ackermann_msgs.msg import AckermannDriveStamped
+from geometry_msgs.msg import Twist
 import math
 
-
-def convert_trans_rot_vel_to_steering_angle(vel, omega, wheelbase):
-    if omega == 0 or vel == 0:
-        return 0.0
-    
-    vel = abs(vel)
-    rad = vel / omega
-    return math.atan(wheelbase / rad)
-
-
-class TwistToAckermann(Node):
+class AckermannToTwist(Node):
     def __init__(self):
-        super().__init__('twist_to_ackermann')
-        
+        super().__init__('ackermann_to_twist')
         self.declare_parameter('wheelbase', 0.33)
-        self._wheelbase = self.get_parameter('wheelbase').value
-        
-        self._twist_sub = self.create_subscription(
-            Twist, '/cmd_vel', self.twist_cb, 10)
-        self._ack_pub = self.create_publisher(
-            AckermannDriveStamped, '/ackermann_cmd', 10)
+        self.wheelbase = self.get_parameter('wheelbase').value
 
-    def twist_cb(self, msg):
-        out = AckermannDriveStamped()
-        out.drive.speed = msg.linear.x
-        out.drive.steering_angle = convert_trans_rot_vel_to_steering_angle(
-            msg.linear.x, msg.angular.z, self._wheelbase)
-        self._ack_pub.publish(out)
+        self.sub = self.create_subscription(
+            AckermannDriveStamped,
+            '/drive',
+            self.callback,
+            10)
+        self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
+    def callback(self, msg):
+        t = Twist()
+        t.linear.x = msg.drive.speed
+        t.angular.z = msg.drive.speed * math.tan(msg.drive.steering_angle) / self.wheelbase
+        self.pub.publish(t)
 
 def main(args=None):
     rclpy.init(args=args)
-    node = TwistToAckermann()
+    node = AckermannToTwist()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()
