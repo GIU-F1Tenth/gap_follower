@@ -135,7 +135,6 @@ class SteeringSpeedNode(Node):
             return scan_msg
         filtered_scan_msg = copy.deepcopy(scan_msg)
         for curr_edge in reversed(sorted_dangerous_edges):
-            # self.get_logger().info(f"dangerous edge at index {curr_edge[0]} with distance {curr_edge[1]:.2f} and angle {curr_edge[2]:.2f} and is left? {curr_edge[3]}")
             if curr_edge[1] <= 0.0:
                 continue
             theta_rad = self.arc_length/curr_edge[1]
@@ -154,11 +153,10 @@ class SteeringSpeedNode(Node):
         the_longest_ray = -1.0
         theta = 0.0
         for i in range(self.smaller_angle_index, self.bigger_angle_index):
-            if i < 0 or i >= len(filtered_scan_msg.ranges):
-                continue
             if filtered_scan_msg.ranges[i] > the_longest_ray:
                 the_longest_ray = filtered_scan_msg.ranges[i]
                 theta = math.degrees(filtered_scan_msg.angle_min + filtered_scan_msg.angle_increment * i)
+        self.get_logger().info(f"theta = {theta:.2f} deg, longest ray = {the_longest_ray:.2f}")
         return theta
 
     def get_theta_target(self): # degrees
@@ -166,7 +164,7 @@ class SteeringSpeedNode(Node):
         self.possible_edges = possible_edges
         self.dangerous_edges = self.find_n_critical_edges(possible_edges, self.number_of_critical_edges)
         filtered_scan_msg = self.filter_scan(self.scan_msg, self.dangerous_edges)
-        # self.filtered_laser_scan_pub.publish(filtered_scan_msg)
+        self.filtered_laser_scan_pub.publish(filtered_scan_msg)
         return self.find_theta_from_longest_ray(filtered_scan_msg)
 
     def find_linear_vel_if_too_close(self)->float:
@@ -262,23 +260,67 @@ class SteeringSpeedNode(Node):
         # implement custom behavior if required
         pass
 
-    def filter_scan_cb(self, msg:LaserScan):
-        # copy latest scan
-        self.scan_msg = copy.deepcopy(msg)
-        # remove zeros and infs (you already did this)
-        self.scan_msg.ranges = [r for r in self.scan_msg.ranges if r != 0.0 and not math.isinf(r)]
-        smaller_angle = math.radians(-self.limit_angle)
-        self.smaller_angle_index = int((smaller_angle - msg.angle_min)/msg.angle_increment) if msg.angle_increment != 0.0 else 0
-        bigger_angle = math.radians(self.limit_angle)
-        self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment) if msg.angle_increment != 0.0 else len(self.scan_msg.ranges)-1
+    # def filter_scan_cb(self, msg:LaserScan):
+    #     # copy latest scan
+    #     self.scan_msg = copy.deepcopy(msg)
+    #     # remove zeros and infs (you already did this)
+    #     self.scan_msg.ranges = [
+    #         r if (r != 0.0 and not math.isinf(r)) else msg.range_max
+    #         for r in msg.ranges
+    #     ]
+    #     smaller_angle = math.radians(-self.limit_angle)
+    #     self.smaller_angle_index = int((smaller_angle - msg.angle_min)/msg.angle_increment) if msg.angle_increment != 0.0 else 0
+    #     bigger_angle = math.radians(self.limit_angle)
+    #     self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment) if msg.angle_increment != 0.0 else len(self.scan_msg.ranges)-1
 
-        # compute desired heading (degrees)
+    #     # compute desired heading (degrees)
+    #     self.theta = self.get_theta_target()
+
+    #     # compute linear velocity (take min of the two sigmoid methods like before)
+    #     v1 = self.find_linear_vel_steering_controlled_sigmoidally()
+    #     v2 = self.find_linear_vel_front_ray_controlled_sigmoidally()
+    #     self.linear_velocity = min(v1, v2)
+
+    def filter_scan_cb(self, msg: LaserScan):
+        # Copy the scan safely
+        self.scan_msg = copy.deepcopy(msg)
+
+        # Replace invalid ranges (0 or inf) with max range
+        self.scan_msg.ranges = [
+            r if (r != 0.0 and not math.isinf(r)) else msg.range_max
+            for r in msg.ranges
+        ]
+
+        # --- 🔄 REFORMAT SCAN FROM [0, 360) → [-180, 180) ---
+        num_readings = len(self.scan_msg.ranges)
+        half = num_readings // 2
+
+        # Rotate ranges by 180 degrees (π radians)
+        self.scan_msg.ranges = self.scan_msg.ranges[half:] + self.scan_msg.ranges[:half]
+
+        # Update angle metadata accordingly
+        self.scan_msg.angle_min = -math.pi
+        self.scan_msg.angle_max = math.pi
+        self.scan_msg.angle_increment = (2 * math.pi) / num_readings
+
+        # --- Compute smaller/larger angle window for processing ---
+        smaller_angle = math.radians(-self.limit_angle)
+        bigger_angle = math.radians(self.limit_angle)
+
+        self.smaller_angle_index = int(
+            (smaller_angle - self.scan_msg.angle_min) / self.scan_msg.angle_increment
+        )
+        self.bigger_angle_index = int(
+            (bigger_angle - self.scan_msg.angle_min) / self.scan_msg.angle_increment
+        )
+        # --- Compute desired heading (degrees) ---
         self.theta = self.get_theta_target()
 
-        # compute linear velocity (take min of the two sigmoid methods like before)
+        # --- Compute linear velocity ---
         v1 = self.find_linear_vel_steering_controlled_sigmoidally()
         v2 = self.find_linear_vel_front_ray_controlled_sigmoidally()
         self.linear_velocity = min(v1, v2)
+
 
     def follow_the_gap(self):
         ref_angle = 0.0
