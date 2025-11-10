@@ -9,6 +9,7 @@ import copy
 import numpy as np
 from std_msgs.msg import Bool
 from rclpy.qos import qos_profile_sensor_data
+from visualization_msgs.msg import Marker
 
 class SteeringSpeedNode(Node):
     def __init__(self):
@@ -31,6 +32,8 @@ class SteeringSpeedNode(Node):
             10
         )
 
+        self.marker_pub = self.create_publisher(Marker, "/chosen_ray_marker", 10)
+        
         # For differential drive we publish Twist (default topic /cmd_vel)
         self.drive_param = self.declare_parameter("drive_topic", "/cmd_vel")
         self.pub_vel_cmd = self.create_publisher(Twist, self.drive_param.get_parameter_value().string_value, 10)
@@ -260,27 +263,6 @@ class SteeringSpeedNode(Node):
         # implement custom behavior if required
         pass
 
-    # def filter_scan_cb(self, msg:LaserScan):
-    #     # copy latest scan
-    #     self.scan_msg = copy.deepcopy(msg)
-    #     # remove zeros and infs (you already did this)
-    #     self.scan_msg.ranges = [
-    #         r if (r != 0.0 and not math.isinf(r)) else msg.range_max
-    #         for r in msg.ranges
-    #     ]
-    #     smaller_angle = math.radians(-self.limit_angle)
-    #     self.smaller_angle_index = int((smaller_angle - msg.angle_min)/msg.angle_increment) if msg.angle_increment != 0.0 else 0
-    #     bigger_angle = math.radians(self.limit_angle)
-    #     self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment) if msg.angle_increment != 0.0 else len(self.scan_msg.ranges)-1
-
-    #     # compute desired heading (degrees)
-    #     self.theta = self.get_theta_target()
-
-    #     # compute linear velocity (take min of the two sigmoid methods like before)
-    #     v1 = self.find_linear_vel_steering_controlled_sigmoidally()
-    #     v2 = self.find_linear_vel_front_ray_controlled_sigmoidally()
-    #     self.linear_velocity = min(v1, v2)
-
     def filter_scan_cb(self, msg: LaserScan):
         # Copy the scan safely
         self.scan_msg = copy.deepcopy(msg)
@@ -316,11 +298,45 @@ class SteeringSpeedNode(Node):
         # --- Compute desired heading (degrees) ---
         self.theta = self.get_theta_target()
 
+        # Publish the chosen ray marker for visualization
+        self.publish_chosen_ray_marker(self.theta)
+        
         # --- Compute linear velocity ---
         v1 = self.find_linear_vel_steering_controlled_sigmoidally()
         v2 = self.find_linear_vel_front_ray_controlled_sigmoidally()
         self.linear_velocity = min(v1, v2)
 
+    def publish_chosen_ray_marker(self, theta_deg: float):
+        marker = Marker()
+        marker.header.frame_id = "base_link"  # or "laser" depending on your setup
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "chosen_ray"
+        marker.id = 0
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+
+        # Arrow starts at origin, points outward in chosen direction
+        length = 1.0  # 1 meter arrow length
+        theta_rad = math.radians(theta_deg)
+        marker.pose.position.x = 0.0
+        marker.pose.position.y = 0.0
+        marker.pose.position.z = 0.0
+        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.y = 0.0
+        marker.pose.orientation.z = math.sin(theta_rad / 2.0)
+        marker.pose.orientation.w = math.cos(theta_rad / 2.0)
+
+        marker.scale.x = length  # shaft length
+        marker.scale.y = 0.05    # shaft diameter
+        marker.scale.z = 0.05    # head diameter
+
+        # Make the arrow bright and visible
+        marker.color.r = 1.0
+        marker.color.g = 0.1
+        marker.color.b = 0.1
+        marker.color.a = 1.0
+
+        self.marker_pub.publish(marker)
 
     def follow_the_gap(self):
         ref_angle = 0.0
