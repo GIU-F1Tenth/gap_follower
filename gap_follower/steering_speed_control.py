@@ -3,6 +3,7 @@
 import rclpy
 from rclpy.node import Node
 from ackermann_msgs.msg import AckermannDriveStamped
+from rclpy.subscription import Subscription
 from sensor_msgs.msg import LaserScan
 from sensor_msgs.msg import Joy
 import math
@@ -74,12 +75,6 @@ class SteeringSpeedNode(Node):
         self.linear_velocity = 0.0
         self.prev_edge = None
         self.override_steering = False
-
-        self.pause_sub = self.create_subscription(Bool, "/pause", self.toggle_stop, 10)
-        self.gap_follower_toggle_sub = self.create_subscription(
-            Bool, "/gap_follower_toggle", self.toggle_algo_cb, 10
-        )
-        self.subscription = self.create_subscription(Joy, "joy", self.joy_callback, 10)
 
     def find_sorted_possible_edges(self, scan_msg: LaserScan):
         ranges = scan_msg.ranges
