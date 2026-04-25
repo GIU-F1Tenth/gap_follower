@@ -211,10 +211,14 @@ class SteeringSpeedNode(Node):
         # if was left
         if self.prev_edge[3] == True:
             self.vel_cmd.drive.steering_angle = -2.7
-            self.get_logger().info(f"{self.min_distance} back.... left")
+            self.get_logger().info(
+                f"{self.min_distance} back.... left", throttle_duration_sec=1.0
+            )
         else:
             self.vel_cmd.drive.steering_angle = 2.7
-            self.get_logger().info(f"{self.min_distance} back.... right")
+            self.get_logger().info(
+                f"{self.min_distance} back.... right", throttle_duration_sec=1.0
+            )
 
         linear_vel = -0.4
         return linear_vel
