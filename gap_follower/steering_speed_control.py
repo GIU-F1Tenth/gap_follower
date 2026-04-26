@@ -73,6 +73,7 @@ class SteeringSpeedNode(Node):
         self.linear_velocity = 0.0
         self.prev_edge = None
         self.override_steering = False
+        self.active = False
 
         self.control_selector_topic = (
             self.declare_parameter("control_selector_topic", "/control_selector")
