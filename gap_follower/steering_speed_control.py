@@ -88,7 +88,7 @@ class SteeringSpeedNode(Node):
         )
 
     def control_selector_callback(self, msg: String):
-        if msg.data == "gap_following":
+        if "gap_following" in msg.data:
             self.active = True
         else:
             self.active = False
