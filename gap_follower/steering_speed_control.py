@@ -3,13 +3,11 @@
 import rclpy
 from rclpy.node import Node
 from ackermann_msgs.msg import AckermannDriveStamped
-from rclpy.subscription import Subscription
+from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
-from sensor_msgs.msg import Joy
 import math
 import copy
 import numpy as np
-from std_msgs.msg import Bool
 
 
 class SteeringSpeedNode(Node):
@@ -75,6 +73,24 @@ class SteeringSpeedNode(Node):
         self.linear_velocity = 0.0
         self.prev_edge = None
         self.override_steering = False
+
+        self.control_selector_topic = (
+            self.declare_parameter("control_selector_topic", "/control_selector")
+            .get_parameter_value()
+            .string_value
+        )
+        self.control_selector_sub = self.create_subscription(
+            String,
+            self.control_selector_topic,
+            self.control_selector_callback,
+            10,
+        )
+
+    def control_selector_callback(self, msg: String):
+        if msg.data == "gap_following":
+            self.active = True
+        else:
+            self.active = False
 
     def find_sorted_possible_edges(self, scan_msg: LaserScan):
         ranges = scan_msg.ranges
@@ -204,12 +220,12 @@ class SteeringSpeedNode(Node):
         return linear_vel
 
     def find_linear_vel_if_too_close(self) -> float:
-        if self.prev_edge == None:
-            self.get_logger().info(f"there is no prev edge")
+        if self.prev_edge is None:
+            self.get_logger().info("there is no prev edge")
             self.prev_edge = [0, 0.0, False, 0]  # default is right
 
         # if was left
-        if self.prev_edge[3] == True:
+        if self.prev_edge[3]:
             self.vel_cmd.drive.steering_angle = -2.7
             self.get_logger().info(
                 f"{self.min_distance} back.... left", throttle_duration_sec=1.0
@@ -331,6 +347,9 @@ class SteeringSpeedNode(Node):
         self.linear_velocity = self.find_linear_vel_steering_controlled_sigmoidally()
 
     def follow_the_gap(self):
+        if not self.active:
+            return
+
         ref_angle = 0.0
         error = self.theta - ref_angle
         p_controller = self.kp * error

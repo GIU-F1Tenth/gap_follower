@@ -3,6 +3,7 @@ gap_steering_node:
     scan_topic: "/scan"
     drive_topic: "/ackermann_cmd"
     filtered_scan_topic: "/filtered_scan"
+    control_selector_topic: "/control_selector"
     limit_angle: 85.0
     kp: 0.51
     kd: 1.15
@@ -14,4 +15,3 @@ gap_steering_node:
     max_distance: 10.0
     min_vel: 1.6
     max_vel: 4.0
-
