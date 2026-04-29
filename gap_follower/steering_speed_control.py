@@ -68,8 +68,10 @@ class SteeringSpeedNode(Node):
         self.min_vel = self.min_vel_param.get_parameter_value().double_value
         self.max_vel_param = self.declare_parameter("max_vel", 5.0)
         self.max_vel = self.max_vel_param.get_parameter_value().double_value
-        self.k_sigmoid_param = self.declare_parameter("k_sigmoid", 8.0)
-        self.k_sigmoid = self.k_sigmoid_param.get_parameter_value().double_value
+        self.k_sigmoid_steering_param = self.declare_parameter('k_sigmoid_steering', 8.0)
+        self.k_sigmoid_steering = self.k_sigmoid_steering_param.get_parameter_value().double_value
+        self.k_sigmoid_linear_vel_param = self.declare_parameter('k_sigmoid_linear_vel', 0.5)
+        self.k_sigmoid_linear_vel = self.k_sigmoid_linear_vel_param.get_parameter_value().double_value
         self.linear_velocity = 0.0
         self.prev_edge = None
         self.override_steering = False
