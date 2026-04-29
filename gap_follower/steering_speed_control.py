@@ -237,7 +237,7 @@ class SteeringSpeedNode(Node):
                 f"{self.min_distance} back.... right", throttle_duration_sec=1.0
             )
 
-        linear_vel = -0.4
+        linear_vel = -0.8
         return linear_vel
 
     def find_linear_vel_steering_controlled(self):
