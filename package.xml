@@ -2,10 +2,11 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>gap_follower</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="georgehany064@gmail.com">root</maintainer>
-  <license>TODO: License declaration</license>
+  <version>1.0.0</version>
+  <description>A ROS 2 package implementing the gap following algorithm for autonomous vehicle navigation using LiDAR data.</description>
+  <maintainer email="georgehany064@gmail.com">George Hany</maintainer>
+  <maintainer email="fam@awadlouis.com">Fam Shihata</maintainer>
+  <license>MIT</license>
 
   <depend>rclpy</depend>
 

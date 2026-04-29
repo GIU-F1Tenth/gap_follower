@@ -2,36 +2,54 @@
 
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
 from ackermann_msgs.msg import AckermannDriveStamped
+from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
-from pynput import keyboard
 import math
 import copy
 import numpy as np
-from std_msgs.msg import Bool
+
 
 class SteeringSpeedNode(Node):
     def __init__(self):
         super().__init__("gap_steering_joy_node")
         self.get_logger().info("the steering node has started")
         self.scan_param = self.declare_parameter("scan_topic", "/scan")
-        self.sub_scan = self.create_subscription(LaserScan, self.scan_param.get_parameter_value().string_value, self.filter_scan_cb, 10)
-        self.filtered_scan_param = self.declare_parameter("filtered_scan_topic", "/filtered_scan")
-        self.filtered_laser_scan_pub = self.create_publisher(LaserScan, self.filtered_scan_param.get_parameter_value().string_value, 10)
-        self.drive_param = self.declare_parameter("drive_topic", "/tmp/ackermann_cmd")
-        self.pub_vel_cmd = self.create_publisher(AckermannDriveStamped, self.drive_param.get_parameter_value().string_value, 10)
-        self.tmr = self.create_timer(0.001, self.follow_the_gap)
+        self.sub_scan = self.create_subscription(
+            LaserScan,
+            self.scan_param.get_parameter_value().string_value,
+            self.filter_scan_cb,
+            10,
+        )
+        self.filtered_scan_param = self.declare_parameter(
+            "filtered_scan_topic", "/filtered_scan"
+        )
+        self.filtered_laser_scan_pub = self.create_publisher(
+            LaserScan, self.filtered_scan_param.get_parameter_value().string_value, 10
+        )
+        self.drive_param = self.declare_parameter("drive_topic", "/ackermann_cmd")
+        self.pub_vel_cmd = self.create_publisher(
+            AckermannDriveStamped,
+            self.drive_param.get_parameter_value().string_value,
+            10,
+        )
+        self.tmr = self.create_timer(0.0001, self.follow_the_gap)
         self.limit_angle_param = self.declare_parameter("limit_angle", 70.0)
-        self.limit_angle = self.limit_angle_param.get_parameter_value().double_value # in degrees
+        self.limit_angle = (
+            self.limit_angle_param.get_parameter_value().double_value
+        )  # in degrees
         self.scan_msg = LaserScan()
         self.filtered_scan_msg = LaserScan()
         self.vel_cmd = AckermannDriveStamped()
-        self.number_of_critical_edges_param = self.declare_parameter("number_of_critical_edges", 2)
-        self.number_of_critical_edges = self.number_of_critical_edges_param.get_parameter_value().integer_value
+        self.number_of_critical_edges_param = self.declare_parameter(
+            "number_of_critical_edges", 2
+        )
+        self.number_of_critical_edges = (
+            self.number_of_critical_edges_param.get_parameter_value().integer_value
+        )
         self.obs_thresh_param = self.declare_parameter("obstacle_distance_thresh", 0.8)
-        self.obs_thresh = self.obs_thresh_param.get_parameter_value().double_value     
-        self.theta = 0.0 
+        self.obs_thresh = self.obs_thresh_param.get_parameter_value().double_value
+        self.theta = 0.0
         self.steering_angle = 0.0
         self.possible_edges = []
         self.kp_param = self.declare_parameter("kp", 1.0)
@@ -40,147 +58,101 @@ class SteeringSpeedNode(Node):
         self.kd = self.kd_param.get_parameter_value().double_value
         self.prev_error = 0.0
         self.dangerous_edges = []
-        self.arc_length_param = self.declare_parameter('arc_length', 0.4)
+        self.arc_length_param = self.declare_parameter("arc_length", 0.4)
         self.arc_length = self.arc_length_param.get_parameter_value().double_value
         self.min_distance_param = self.declare_parameter("min_distance", 5.0)
         self.min_distance = self.min_distance_param.get_parameter_value().double_value
         self.max_distance_param = self.declare_parameter("max_distance", 9.0)
         self.max_distance = self.max_distance_param.get_parameter_value().double_value
-        self.min_vel_param = self.declare_parameter('min_vel', 0.2)
+        self.min_vel_param = self.declare_parameter("min_vel", 0.2)
         self.min_vel = self.min_vel_param.get_parameter_value().double_value
-        self.max_vel_param = self.declare_parameter('max_vel', 5.0)
+        self.max_vel_param = self.declare_parameter("max_vel", 5.0)
         self.max_vel = self.max_vel_param.get_parameter_value().double_value
-        self.k_sigmoid_steering_param = self.declare_parameter('k_sigmoid_steering', 8.0)
-        self.k_sigmoid_steering = self.k_sigmoid_steering_param.get_parameter_value().double_value
-        self.k_sigmoid_linear_vel_param = self.declare_parameter('k_sigmoid_linear_vel', 0.5)
-        self.k_sigmoid_linear_vel = self.k_sigmoid_linear_vel_param.get_parameter_value().double_value
+        self.k_sigmoid_param = self.declare_parameter("k_sigmoid", 8.0)
+        self.k_sigmoid = self.k_sigmoid_param.get_parameter_value().double_value
         self.linear_velocity = 0.0
         self.prev_edge = None
         self.override_steering = False
-        self.activate_autonomous_vel = False
-        self.is_active = True   
-        self.stop = False 
-    
-        self.pause_sub = self.create_subscription(Bool, "/pause", self.toggle_stop, 10)    
-        self.gap_follower_toggle_sub = self.create_subscription(Bool, "/gap_follower_toggle", self.toggle_algo_cb, 10)
-        listener = keyboard.Listener(
-            on_press=self.on_press,
-            on_release=self.on_release
+        self.active = False
+
+        self.control_selector_topic = (
+            self.declare_parameter("control_selector_topic", "/control_selector")
+            .get_parameter_value()
+            .string_value
         )
-        listener.start()
-        
-    def on_press(self, key):
-        """
-        Handle key press events for controlling the pure pursuit parameters.
-        This allows dynamic adjustment of controller parameters during runtime.
-        Args:
-            key (Key): The key that was pressed
-            - d : Increase kd by 0.1
-            - x : Decrease kd by 0.1  
-            - b : Increase kp by 0.1
-            - z : Decrease kp by 0.1
-            - a : Enable autonomous velocity control
-        """
-        try:
-            if key.char == 'a':
-                self.activate_autonomous_vel = True 
-            if key.char == 'd':
-                self.kd += 0.1
-                self.get_logger().info(f"kd increased to {self.kd:.2f}")
-            if key.char == 'x':
-                self.kd -= 0.1
-                self.get_logger().info(f"kd decreased to {self.kd:.2f}")
-            if key.char == 'b':
-                self.kp += 0.1
-                self.get_logger().info(f"kp increased to {self.kp:.2f}")
-            if key.char == 'z':
-                self.kp -= 0.1
-                self.get_logger().info(f"kp decreased to {self.kp:.2f}")
-        except AttributeError:
-            self.get_logger().warn("error while sending.. :(")
+        self.control_selector_sub = self.create_subscription(
+            String,
+            self.control_selector_topic,
+            self.control_selector_callback,
+            10,
+        )
 
-    def on_release(self, key):
-        """
-        Handle key release events to stop the robot or deactivate autonomous velocity control.
-        Args:
-            key (Key): The key that was released
-            - a (button 4): Disable autonomous velocity control
-            - esc: Stop the listener and exit
-        """
-        # Stop the robot when the key is released
-        self.activate_autonomous_vel = False
-        self.vel_cmd.drive.speed = 0.0
-        self.get_logger().info("Stopping the car")
-        self.pub_vel_cmd.publish(self.vel_cmd)
-        if key == keyboard.Key.esc:
-            # Stop listener
-            return False
-
-    def toggle_stop(self, msg:Bool):
-        self.stop = msg.data
-        if self.stop:
-            self.get_logger().info("Stopping the car")
-            self.stop = True
+    def control_selector_callback(self, msg: String):
+        if "gap_following" in msg.data:
+            self.active = True
         else:
-            self.get_logger().info("Resuming the car")
-            self.stop = False
-        
-    def toggle_algo_cb(self, msg:Bool):
-        self.is_active = msg.data
-        
+            self.active = False
+
     def find_sorted_possible_edges(self, scan_msg: LaserScan):
         ranges = scan_msg.ranges
         possible_edges = []
-        for i in range(self.smaller_angle_index, self.bigger_angle_index-1):
+        for i in range(self.smaller_angle_index, self.bigger_angle_index - 1):
             is_left = True
-            if abs(ranges[i] - ranges[i+1]) > self.obs_thresh: # we found an edge (index, distance, angle, is_left, rays_radius)
+            if (
+                abs(ranges[i] - ranges[i + 1]) > self.obs_thresh
+            ):  # we found an edge (index, distance, angle, is_left, rays_radius)
                 # we iterate from right to left
-                if ranges[i] > ranges[i+1]: # that means we want to block the right block
+                if (
+                    ranges[i] > ranges[i + 1]
+                ):  # that means we want to block the right block
                     is_left = False
                 else:
                     is_left = True
                 angle = math.degrees(scan_msg.angle_min + scan_msg.angle_increment * i)
-                possible_edges.append([i, min(ranges[i], ranges[i+1]), angle, is_left, 0.0]) # keep it 0.0 as we know when problems happen
-        
+                possible_edges.append(
+                    [i, min(ranges[i], ranges[i + 1]), angle, is_left, 0.0]
+                )  # keep it 0.0 as we know when problems happen
+
         # sorted ascendingly based on the distance of each edge
         possible_edges.sort(key=lambda x: x[1])
         return possible_edges
-    
-    def find_n_critical_edges(self, sorted_poss_edges:list, n):
+
+    def find_n_critical_edges(self, sorted_poss_edges: list, n):
         # the dangerous edges are sorted ascendingly
         if len(sorted_poss_edges) == 0:
             return []
         sorted_dangerous_edges = []
-        if len(sorted_poss_edges) < n: # if the desired number of critical edges was more that the number of the critical edges
+        if (
+            len(sorted_poss_edges) < n
+        ):  # if the desired number of critical edges was more that the number of the critical edges
             n = len(sorted_poss_edges)
         for i in range(n):
             sorted_dangerous_edges.append(sorted_poss_edges[i])
         return sorted_dangerous_edges
 
-    def filter_scan(self, scan_msg:LaserScan, sorted_dangerous_edges:list):
+    def filter_scan(self, scan_msg: LaserScan, sorted_dangerous_edges: list):
         if len(sorted_dangerous_edges) == 0:
             return scan_msg
-            
+
         filtered_scan_msg = copy.deepcopy(scan_msg)
         # this is very important to filter the readings fromt the least significant edge to the most one
         # because we overwrite the least important dangerous edge by the important one.
         # we iterate in reversed order to move from the least dangerous edge to the most dangerous ones.
         # we can improve and decide when the car has a very far prespective it unifies all distances greater
-        # than max_distance into max_distance and then go in the middle of this circle. 
+        # than max_distance into max_distance and then go in the middle of this circle.
         for curr_edge in reversed(sorted_dangerous_edges):
-
             # to make the arc,the car's front end, constant
-            theta_rad = self.arc_length/curr_edge[1]
-            rays_radius = int(theta_rad/scan_msg.angle_increment)
-            rays_radius *= 2 
+            theta_rad = self.arc_length / curr_edge[1]
+            rays_radius = int(theta_rad / scan_msg.angle_increment)
+            rays_radius *= 2
 
             # adding the rays thresh to the dangerous edges (index, distance, angle, is_left, rays_radius)
             curr_edge[4] = rays_radius
 
-            from_index = -rays_radius//2
-            to_index = rays_radius//2
+            from_index = -rays_radius // 2
+            to_index = rays_radius // 2
             for i in range(from_index, to_index):
-                var_index = (i + curr_edge[0])
+                var_index = i + curr_edge[0]
                 if 0 <= var_index < len(filtered_scan_msg.ranges):
                     filtered_scan_msg.ranges[var_index] = min(curr_edge[1], scan_msg.ranges[var_index]) # set current filtered distance to the minimum ray distance
 
@@ -192,8 +164,10 @@ class SteeringSpeedNode(Node):
         for i in range(self.smaller_angle_index, self.bigger_angle_index):
             if filtered_scan_msg.ranges[i] > the_longest_ray:
                 the_longest_ray = filtered_scan_msg.ranges[i]
-                theta = math.degrees(filtered_scan_msg.angle_min + filtered_scan_msg.angle_increment * i)
-        
+                theta = math.degrees(
+                    filtered_scan_msg.angle_min + filtered_scan_msg.angle_increment * i
+                )
+
         return theta
 
     def get_theta_target(self): # gets the theta in degrees
@@ -201,10 +175,12 @@ class SteeringSpeedNode(Node):
         possible_edges = self.find_sorted_possible_edges(scan_msg=self.scan_msg)
         self.possible_edges = possible_edges
 
-        self.dangerous_edges = self.find_n_critical_edges(possible_edges, self.number_of_critical_edges)
+        self.dangerous_edges = self.find_n_critical_edges(
+            possible_edges, self.number_of_critical_edges
+        )
         # filter scan message
         filtered_scan_msg = self.filter_scan(self.scan_msg, self.dangerous_edges)
-        
+
         # publish filtered scan data
         self.filtered_laser_scan_pub.publish(filtered_scan_msg)
 
@@ -232,15 +208,15 @@ class SteeringSpeedNode(Node):
         # if the car cannot see any obstacles
         if len(self.possible_edges) == 0:
             # if the car is very close
-            if min_scan_ray_dist < self.min_distance:  
-                self.override_steering = True          
+            if min_scan_ray_dist < self.min_distance:
+                self.override_steering = True
                 return self.find_linear_vel_if_too_close()
             else:
                 angle_x = abs(self.theta)
         else:
             # the angle is the current angle of the car
             angle_x = abs(self.theta)
-        
+
         self.override_steering = False
         m = (self.max_vel - self.min_vel)/(0.0 - self.limit_angle)
         c = self.max_vel - m*(0.0)
@@ -252,12 +228,14 @@ class SteeringSpeedNode(Node):
         return linear_vel
 
     def find_linear_vel_steering_controlled_rationally(self):
-        min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+        min_scan_ray_dist = min(
+            self.scan_msg.ranges[self.smaller_angle_index : self.bigger_angle_index]
+        )
 
         # If no edges are detected
         if len(self.possible_edges) == 0:
-            if min_scan_ray_dist < self.min_distance:  
-                self.override_steering = True          
+            if min_scan_ray_dist < self.min_distance:
+                self.override_steering = True
                 return self.find_linear_vel_if_too_close()
             else:
                 angle_x = abs(self.theta)
@@ -268,7 +246,9 @@ class SteeringSpeedNode(Node):
 
         # Improved rational model
         k = 5.0  # Tuning parameter (try 5–10)
-        linear_vel = self.min_vel + (self.max_vel - self.min_vel) / (1 + k * math.radians(angle_x))
+        linear_vel = self.min_vel + (self.max_vel - self.min_vel) / (
+            1 + k * math.radians(angle_x)
+        )
 
         # Clamp to ensure safety
         linear_vel = max(self.min_vel, min(self.max_vel, linear_vel))
@@ -276,11 +256,13 @@ class SteeringSpeedNode(Node):
         return linear_vel
 
     def find_linear_vel_steering_controlled_sigmoidally(self):
-        min_scan_ray_dist = min(self.scan_msg.ranges[self.smaller_angle_index:self.bigger_angle_index])
+        min_scan_ray_dist = min(
+            self.scan_msg.ranges[self.smaller_angle_index : self.bigger_angle_index]
+        )
 
         if len(self.possible_edges) == 0:
-            if min_scan_ray_dist < self.min_distance:  
-                self.override_steering = True          
+            if min_scan_ray_dist < self.min_distance:
+                self.override_steering = True
                 return self.find_linear_vel_if_too_close()
             else:
                 angle_x = abs(self.theta)
@@ -300,7 +282,9 @@ class SteeringSpeedNode(Node):
         c = compute_c_sigmoid(self.min_vel, self.max_vel, k)  # Center of sigmoid
 
         # Sigmoid velocity model
-        vel = self.min_vel + (self.max_vel - self.min_vel) / (1 + np.exp(k * (math.radians(angle_x) - c)))
+        vel = self.min_vel + (self.max_vel - self.min_vel) / (
+            1 + np.exp(k * (math.radians(angle_x) - c))
+        )
 
         # Clamp to [min_vel, max_vel]
         vel = max(self.min_vel, min(self.max_vel, vel))
@@ -352,9 +336,13 @@ class SteeringSpeedNode(Node):
     def filter_scan_cb(self, msg:LaserScan):
         self.scan_msg = msg
         smaller_angle = math.radians(-self.limit_angle)
-        self.smaller_angle_index = int((smaller_angle - msg.angle_min)/msg.angle_increment)
+        self.smaller_angle_index = int(
+            (smaller_angle - msg.angle_min) / msg.angle_increment
+        )
         bigger_angle = math.radians(self.limit_angle)
-        self.bigger_angle_index = int((bigger_angle - msg.angle_min)/msg.angle_increment)
+        self.bigger_angle_index = int(
+            (bigger_angle - msg.angle_min) / msg.angle_increment
+        )
         # remember to extract first functions inside get_theta and put it here to be more clear and pass them to both functions 'theta and linear'
         self.theta = self.get_theta_target()
         # # choosing the minimum linear velocity between the two methods
@@ -362,8 +350,11 @@ class SteeringSpeedNode(Node):
         # self.linear_velocity = self.find_linear_vel_steering_controlled_linearly()
 
     def follow_the_gap(self):
+        if not self.active:
+            return
+
         ref_angle = 0.0
-        error = (self.theta - ref_angle)
+        error = self.theta - ref_angle
         p_controller = self.kp * error
         d_controller = (error - self.prev_error) * self.kd
         steering_angle = p_controller + d_controller
@@ -382,6 +373,7 @@ def main():
     node = SteeringSpeedNode()
     rclpy.spin(node=node)
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()
